@@ -9,21 +9,50 @@ import (
 type (
 	Service struct {
 		logger *slog.Logger
-		store  Store
+		store  ServiceStore
 	}
 
-	Store interface {
-		SaveGame(ctx context.Context, game Game) error
+	ServiceStore interface {
+		GameStore
+		TurnStore
+		VoteStore
+		PlayerStore
+		UsageStore
+	}
+
+	GameStore interface {
+		CreateGame(ctx context.Context, game Game) error
+		UpdateGame(ctx context.Context, game Game) error
 		GetGameByID(ctx context.Context, id string) (*Game, error)
-		SaveTurn(ctx context.Context, turn Turn) error
+	}
+
+	TurnStore interface {
+		CreateTurn(ctx context.Context, turn Turn) error
+		UpdateTurn(ctx context.Context, turn Turn) error
+		GetTurnByID(ctx context.Context, id string) (*Turn, error)
 		GetTurnsByGameID(ctx context.Context, gameID string) ([]Turn, error)
-		SavePlayer(ctx context.Context, player Player) error
+		GetTurnsByRound(ctx context.Context, gameID string, round int) ([]Turn, error)
+	}
+
+	VoteStore interface {
+		CreateTurnVote(ctx context.Context, turnVote TurnVote) error
+		GetTurnVotes(ctx context.Context, turnID string) ([]TurnVote, error)
+	}
+
+	PlayerStore interface {
+		CreatePlayer(ctx context.Context, player Player) error
+		UpdatePlayer(ctx context.Context, player Player) error
 		GetPlayersByGameID(ctx context.Context, gameID string) ([]Player, error)
 		GetPlayerByID(ctx context.Context, playerID string) (*Player, error)
 	}
+
+	UsageStore interface {
+		GetWordStats(ctx context.Context, word string) (WordStats, error)
+		SaveWordUsage(ctx context.Context, word string, approvals, rejections int) error
+	}
 )
 
-func NewService(logger *slog.Logger, store Store) *Service {
+func NewService(logger *slog.Logger, store ServiceStore) *Service {
 	return &Service{
 		logger: logger,
 		store:  store,
@@ -33,7 +62,7 @@ func NewService(logger *slog.Logger, store Store) *Service {
 func (service *Service) CreateGame(ctx context.Context, name string, passphrase string) (*Game, error) {
 	game := New(name, passphrase)
 
-	err := service.store.SaveGame(ctx, *game)
+	err := service.store.CreateGame(ctx, *game)
 	if err != nil {
 		return nil, err
 	}
@@ -48,6 +77,10 @@ func (service *Service) GetGameByID(ctx context.Context, id string) (*Game, erro
 func (service *Service) AddPlayerToGame(ctx context.Context, gameID string, name string, passphrase string) (*Player, error) {
 	game, err := service.GetGameByID(ctx, gameID)
 	if err != nil {
+		if errors.Is(err, ErrGameNotFound) {
+			return nil, ErrGameNotFound
+		}
+
 		return nil, err
 	}
 
@@ -56,7 +89,7 @@ func (service *Service) AddPlayerToGame(ctx context.Context, gameID string, name
 	}
 
 	player := NewPlayer(gameID, name)
-	err = service.store.SavePlayer(ctx, *player)
+	err = service.store.CreatePlayer(ctx, *player)
 	if err != nil {
 		return nil, err
 	}
@@ -73,14 +106,14 @@ func (service *Service) GetPlayerByID(ctx context.Context, playerID string) (*Pl
 }
 
 func (service *Service) GiveLettersToPlayer(ctx context.Context, playerID string, letters []rune) error {
-	player, err := service.store.GetPlayerByID(ctx, playerID)
+	player, err := service.GetPlayerByID(ctx, playerID)
 	if err != nil {
 		return err
 	}
 
 	player.Letters = append(player.Letters, letters...)
 
-	err = service.store.SavePlayer(ctx, *player)
+	err = service.store.UpdatePlayer(ctx, *player)
 	if err != nil {
 		return err
 	}
@@ -88,12 +121,12 @@ func (service *Service) GiveLettersToPlayer(ctx context.Context, playerID string
 	return nil
 }
 
-func (service *Service) GetBoard(ctx context.Context, gameID string) (Board, error) {
+func (service *Service) GetBoard(ctx context.Context, gameID string) (*Board, error) {
 	// get all turns, construct a board
 	// TODO: cache or improve querying somehow
 	turns, err := service.store.GetTurnsByGameID(context.Background(), gameID)
 	if err != nil {
-		return Board{}, err
+		return nil, err
 	}
 
 	var words []Word
@@ -103,40 +136,222 @@ func (service *Service) GetBoard(ctx context.Context, gameID string) (Board, err
 
 	board, err := NewBoard(words)
 	if err != nil {
-		return Board{}, err
+		return nil, err
 	}
 
 	return board, nil
 }
 
-type TurnRequest struct {
-	GameID   string
-	PlayerID string
-	Word     Word
-}
-
-func (service *Service) RecordTurn(ctx context.Context, request TurnRequest) (*Turn, error) {
-	turn := NewTurn(request.GameID, request.PlayerID, request.Word)
-
-	player, err := service.GetPlayerByID(ctx, request.PlayerID)
+func (service *Service) SubmitTurn(ctx context.Context, gameID string, playerID string, word Word) (*Turn, error) {
+	game, err := service.GetGameByID(ctx, gameID)
 	if err != nil {
 		return nil, err
 	}
 
-	if player.HasLettersForWord(request.Word.Value) {
+	// get all players
+	players, err := service.GetPlayersByGameID(ctx, gameID)
+	if err != nil {
+		return nil, err
+	}
+
+	player, inGame := getPlayer(players, playerID)
+	if !inGame {
+		return nil, ErrPlayerNotFound
+	}
+
+	turn := NewTurn(gameID, game.Round, playerID, word)
+
+	// single player games get auto approval
+	if len(players) == 1 {
+		turn.Status = TurnStatusPlayed
+	}
+
+	// TODO: auto approve if the word is recognized
+	wordStats, err := service.store.GetWordStats(ctx, turn.Word.String())
+	if err != nil {
+		return nil, err
+	}
+
+	// auto approve with high reputation
+	if wordStats.Reputation() > 0.8 {
+		turn.Status = TurnStatusPlayed
+	}
+
+	board, err := service.GetBoard(ctx, gameID)
+	if err != nil {
+		return nil, err
+	}
+
+	wordPlacement, err := board.TryWordPlacement(word)
+	if err != nil {
+		return nil, err
+	}
+
+	if player.HasLetters(wordPlacement.LettersUsed) {
 		return nil, errors.New("player does not have the letters to play the word")
 	}
 
-	// validate the word
-
-	// remove those letters from the player's letters
-	// verify that the word fits among the other words
-	// determine points
-
-	err = service.store.SaveTurn(ctx, *turn)
+	err = service.store.CreateTurn(ctx, *turn)
 	if err != nil {
 		return nil, err
 	}
 
+	if turn.Status == TurnStatusPlayed {
+		// if the status was auto approved somehow, see if we should advance the round
+		service.updateGameState(ctx, gameID, players)
+	}
+
 	return turn, nil
+}
+
+func getPlayer(players []Player, playerID string) (*Player, bool) {
+	for _, player := range players {
+		if player.ID == playerID {
+			return &player, true
+		}
+	}
+
+	return nil, false
+}
+
+func (service *Service) VoteOnTurn(ctx context.Context, gameID string, turnID string, playerID string, approved bool) error {
+	// check that it's a real turn
+	turn, err := service.store.GetTurnByID(ctx, turnID)
+	if err != nil {
+		return err
+	}
+
+	if playerID == turn.PlayerID {
+		return ErrSelfVote
+	}
+
+	// check that the player is in the associated game
+	if ok, err := service.playerIsInGame(ctx, gameID, playerID); err != nil {
+		return err
+	} else if !ok {
+		return ErrPlayerNotFound
+	}
+
+	var voteValue TurnVoteValue
+	if approved {
+		voteValue = TurnVoteValueApprove
+	} else {
+		voteValue = TurnVoteValueReject
+	}
+
+	err = service.store.CreateTurnVote(ctx, TurnVote{
+		TurnID:   turnID,
+		PlayerID: playerID,
+		Value:    voteValue,
+	})
+	if err != nil {
+		return err
+	}
+
+	players, err := service.GetPlayersByGameID(ctx, gameID)
+	if err != nil {
+		return err
+	}
+
+	// update the turn status if necessary
+	err = service.updateTurnStatus(ctx, *turn, players)
+	if err != nil {
+		return err
+	}
+
+	err = service.updateGameState(ctx, gameID, players)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (service *Service) playerIsInGame(ctx context.Context, gameID string, playerID string) (bool, error) {
+	players, err := service.GetPlayersByGameID(ctx, gameID)
+	if err != nil {
+		return false, err
+	}
+
+	for _, player := range players {
+		if player.ID == playerID {
+			return true, nil
+		}
+	}
+
+	return false, nil
+}
+
+func (service *Service) updateTurnStatus(ctx context.Context, turn Turn, players []Player) error {
+	var activePlayerCount int
+	for _, player := range players {
+		if player.Status == PlayerStatusActive {
+			activePlayerCount++
+		}
+	}
+
+	votes, err := service.store.GetTurnVotes(ctx, turn.ID)
+	if err != nil {
+		return err
+	}
+
+	var votesByValue = make(map[TurnVoteValue]int)
+	for _, vote := range votes {
+		votesByValue[vote.Value]++
+	}
+
+	if votesByValue[TurnVoteValueApprove] <= (activePlayerCount-1)/2 {
+		// not approved yet
+		return nil
+	}
+
+	// approved!
+	turn.Status = TurnStatusPlayed
+	err = service.store.UpdateTurn(ctx, turn)
+	if err != nil {
+		return err
+	}
+	err = service.store.SaveWordUsage(ctx, turn.Word.String(), votesByValue[TurnVoteValueApprove], votesByValue[TurnVoteValueReject])
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (service *Service) updateGameState(ctx context.Context, gameID string, players []Player) error {
+	game, err := service.GetGameByID(ctx, gameID)
+	if err != nil {
+		return err
+	}
+
+	turns, err := service.store.GetTurnsByRound(ctx, gameID, game.Round)
+	if err != nil {
+		return err
+	}
+
+	var playersWithTurns = make(map[string]bool)
+	for _, turn := range turns {
+		turnPlayed := turn.Status == TurnStatusPlayed
+		playersWithTurns[turn.PlayerID] = turnPlayed
+	}
+
+	for _, player := range players {
+		if player.Status == PlayerStatusInactive {
+			continue
+		}
+
+		if !playersWithTurns[player.ID] {
+			return nil
+		}
+	}
+
+	// increment round
+	game.Round++
+	err = service.store.UpdateGame(ctx, *game)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }

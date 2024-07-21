@@ -26,17 +26,17 @@ func NewPlayer(gameID string, name string) *Player {
 	}
 }
 
-func (player Player) HasLettersForWord(word string) bool {
-	letters := make(map[rune]int)
-	for _, l := range player.Letters {
-		letters[l]++
+func (player Player) HasLetters(letters []rune) bool {
+	playerLetters := make(map[rune]int)
+	for _, letter := range player.Letters {
+		playerLetters[letter]++
 	}
 
-	for _, l := range word {
-		if letters[l] == 0 {
+	for _, letter := range letters {
+		if playerLetters[letter] == 0 {
 			return false
 		}
-		letters[l]--
+		playerLetters[letter]--
 	}
 
 	return true

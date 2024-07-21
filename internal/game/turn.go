@@ -8,14 +8,37 @@ type Turn struct {
 	PlayerID string
 	Round    int
 	Word     Word
-	Points   string
+	Status   TurnStatus
 }
 
-func NewTurn(gameID string, playerID string, word Word) *Turn {
+type TurnStatus string
+
+const (
+	TurnStatusPending  TurnStatus = "PENDING"
+	TurnStatusPlayed   TurnStatus = "PLAYED"
+	TurnStatusRejected TurnStatus = "REJECTED"
+)
+
+func NewTurn(gameID string, round int, playerID string, word Word) *Turn {
 	return &Turn{
 		ID:       uuid.NewString(),
 		GameID:   gameID,
+		Round:    round,
 		PlayerID: playerID,
 		Word:     word,
+		Status:   TurnStatusPending,
 	}
 }
+
+type TurnVote struct {
+	PlayerID string
+	TurnID   string
+	Value    TurnVoteValue
+}
+
+type TurnVoteValue string
+
+const (
+	TurnVoteValueApprove TurnVoteValue = "APPROVE"
+	TurnVoteValueReject  TurnVoteValue = "REJECT"
+)

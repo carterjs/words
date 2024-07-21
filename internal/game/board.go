@@ -5,10 +5,14 @@ import (
 )
 
 type Board struct {
+	space                  map[point]rune
 	minX, minY, maxX, maxY int
-	grid                   [][]rune
 	directWords            []Word
 	indirectWords          []Word
+}
+
+type point struct {
+	x, y int
 }
 
 func (board Board) AllWords() []Word {
@@ -23,73 +27,122 @@ func (board Board) IndirectWords() []Word {
 	return board.indirectWords
 }
 
-func NewBoard(words []Word) (Board, error) {
-	board := newEmptyBoard(words)
+func NewBoard(words []Word) (*Board, error) {
+	board := &Board{
+		space: make(map[point]rune),
+	}
 
 	// add words into grid
-	for i, word := range words {
-
-		// TODO: clarify terms
-		var overlapping, adjacent bool
-
-		for i, letter := range word.Value {
-			dx, dy := vector(word.Direction)
-			dx *= i
-			dy *= i
-
-			// translate into the bounding space
-			x, y := board.translate(word.X+dx, word.Y+dy)
-
-			// check that overlaps are valid
-			if board.grid[x][y] != 0 {
-				if board.grid[x][y] != letter {
-					return Board{}, WordConflictError{
-						X:    x,
-						Y:    y,
-						Want: letter,
-						Got:  board.grid[x][y],
-					}
-				}
-
-				// there is direct overlap
-				overlapping = true
-			}
-
-			// set the letter
-			board.grid[x][y] = letter
-
-			if overlapping {
-				continue
-			}
-
-			if newWord, ok := board.connectedWord(board.grid, x, y, word.Direction.Other()); ok {
-				adjacent = true
-				board.indirectWords = append(board.indirectWords, newWord)
-			}
-		}
-
-		if i > 0 && !overlapping && !adjacent {
-			return Board{}, ErrWordNotConnected
+	for _, word := range words {
+		_, err := board.PlaceWord(word)
+		if err != nil {
+			return nil, err
 		}
 	}
 
 	return board, nil
 }
 
-func (board Board) connectedWord(grid [][]rune, x, y int, direction Direction) (Word, bool) {
-	dx, dy := vector(direction)
+type PlacementResult struct {
+	LettersUsed   []rune
+	IndirectWords []Word
+}
 
-	word := string(grid[x][y])
+func (board Board) TryWordPlacement(word Word) (PlacementResult, error) {
+	var connected bool
+	var lettersRequired []rune
+	var indirectWords []Word
+
+	for i := range word.Letters {
+		x, y, letter := word.Get(i)
+
+		if currentLetter, isSet := board.get(x, y); isSet {
+			if currentLetter != letter {
+				return PlacementResult{}, WordConflictError{
+					X:    x,
+					Y:    y,
+					Want: letter,
+					Got:  currentLetter,
+				}
+			}
+
+			// can't have indirect words if it's already overlapping
+			connected = true
+			continue
+		}
+
+		lettersRequired = append(lettersRequired, letter)
+
+		if indirectWord, hasIndirectWord := board.wordFormedByNewLetter(letter, x, y, word.Direction.Other()); hasIndirectWord {
+			indirectWords = append(indirectWords, indirectWord)
+			connected = true
+		}
+	}
+
+	if !connected && len(board.directWords) > 0 {
+		return PlacementResult{}, ErrWordNotConnected
+	}
+
+	if len(lettersRequired) == 0 {
+		return PlacementResult{}, ErrUnchangedBoard
+	}
+
+	return PlacementResult{
+		LettersUsed:   lettersRequired,
+		IndirectWords: indirectWords,
+	}, nil
+}
+
+func (board Board) get(x, y int) (rune, bool) {
+	letter, exists := board.space[point{x, y}]
+	return letter, exists
+}
+
+func (board *Board) PlaceWord(word Word) (PlacementResult, error) {
+	wordPlacement, err := board.TryWordPlacement(word)
+	if err != nil {
+		return PlacementResult{}, err
+	}
+	board.indirectWords = append(board.indirectWords, wordPlacement.IndirectWords...)
+
+	for i := range word.Letters {
+		board.set(word.Get(i))
+	}
+	board.directWords = append(board.directWords, word)
+
+	board.minX = min(board.minX, word.X)
+	board.minY = min(board.minY, word.Y)
+
+	if word.Direction == DirectionHorizontal {
+		board.maxX = max(board.maxX, word.X+len(word.Letters))
+		board.maxY = max(board.maxY, word.Y+1)
+	} else {
+		board.maxY = max(board.maxY, word.Y+len(word.Letters))
+		board.maxX = max(board.maxX, word.X+1)
+	}
+
+	return wordPlacement, nil
+}
+
+func (board *Board) set(x, y int, letter rune) {
+	board.space[point{x, y}] = letter
+}
+
+func (board Board) wordFormedByNewLetter(letter rune, x, y int, direction Direction) (Word, bool) {
+	dx, dy := direction.Vector(1)
+
+	word := string(letter)
 	startX := x
 	startY := y
 
 	// starting as far before as possible
 	for {
-		if startX-dx < 0 || startY-dy < 0 || grid[startX-dx][startY-dy] == 0 {
+		letter, isSet := board.get(startX-dx, startY-dy)
+		if !isSet {
 			break
 		}
 
-		word = string(grid[startX-dx][startY-dy]) + word
+		word = string(letter) + word
 		startX -= dx
 		startY -= dy
 	}
@@ -98,11 +151,12 @@ func (board Board) connectedWord(grid [][]rune, x, y int, direction Direction) (
 	endX := x
 	endY := y
 	for {
-		if endX+dx >= len(grid) || endY+dy >= len(grid[0]) || grid[endX+dx][endY+dy] == 0 {
+		letter, isSet := board.get(endX+dx, endY+dy)
+		if !isSet {
 			break
 		}
 
-		word += string(grid[endX+dx][endY+dy])
+		word += string(letter)
 		endX += dx
 		endY += dy
 	}
@@ -112,87 +166,36 @@ func (board Board) connectedWord(grid [][]rune, x, y int, direction Direction) (
 	}
 
 	return Word{
-		X:         board.minX + startX,
-		Y:         board.minY + startY,
+		X:         startX,
+		Y:         startY,
 		Direction: direction,
-		Value:     word,
+		Letters:   []rune(word),
 	}, true
 }
 
-func vector(direction Direction) (int, int) {
-	if direction == DirectionHorizontal {
-		return 1, 0
-	} else {
-		return 0, 1
-	}
-}
-
-func (board Board) translate(x, y int) (int, int) {
-	return x - board.minX, y - board.minY
-}
-
-func newEmptyBoard(words []Word) Board {
-	var minX, minY, maxX, maxY int
-
-	for _, word := range words {
-		if word.X < minX {
-			minX = word.X
-		}
-		if word.Y < minY {
-			minY = word.Y
-		}
-
-		if word.Direction == DirectionHorizontal {
-			if word.X+len(word.Value) > maxX {
-				maxX = word.X + len(word.Value)
-			}
-			if word.Y+1 > maxY {
-				maxY = word.Y + 1
-			}
-		} else {
-			if word.Y+len(word.Value) > maxY {
-				maxY = word.Y + len(word.Value)
-			}
-			if word.X+1 > maxX {
-				maxX = word.X + 1
-			}
-		}
-	}
-
-	return Board{
-		minX:        minX,
-		minY:        minY,
-		maxX:        maxX,
-		maxY:        maxY,
-		grid:        newGrid(maxX-minX, maxY-minY),
-		directWords: words,
-	}
-}
-
-func newGrid(width, height int) [][]rune {
-	grid := make([][]rune, width)
-	for i := range grid {
-		grid[i] = make([]rune, height)
-	}
-
-	return grid
-}
-
 func (board Board) String() string {
-	if len(board.grid) == 0 {
-		return ""
+	if len(board.space) == 0 {
+		return "(no words)"
+	}
+
+	grid := make([][]rune, board.maxX-board.minX)
+	for i := range grid {
+		grid[i] = make([]rune, board.maxY-board.minY)
 	}
 
 	var sb strings.Builder
-	for y := range board.grid[0] {
-		for x := range board.grid {
-			if board.grid[x][y] == 0 {
+	for point, letter := range board.space {
+		grid[point.x-board.minX][point.y-board.minY] = letter
+	}
+
+	for _, row := range grid {
+		for _, letter := range row {
+			if letter == 0 {
 				sb.WriteRune('_')
 			} else {
-				sb.WriteRune(board.grid[x][y])
+				sb.WriteRune(letter)
 			}
 		}
-
 		sb.WriteRune('\n')
 	}
 
