@@ -1,6 +1,10 @@
 package accesslog
 
-import "net/http"
+import (
+	"bufio"
+	"net"
+	"net/http"
+)
 
 type ResponseWriter struct {
 	http.ResponseWriter
@@ -24,6 +28,19 @@ func (w *ResponseWriter) Write(data []byte) (int, error) {
 	size, err := w.ResponseWriter.Write(data)
 	w.size += size
 	return size, err
+}
+
+func (w *ResponseWriter) Flush() {
+	if f, ok := w.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+func (w *ResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	if hj, ok := w.ResponseWriter.(http.Hijacker); ok {
+		return hj.Hijack()
+	}
+	return nil, nil, http.ErrHijacked
 }
 
 func (w *ResponseWriter) Status() int {
