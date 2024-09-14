@@ -69,7 +69,7 @@ func (board *Board) tryWordPlacement(w Word) (PlacementResult, error) {
 		x, y, letter, _ := w.Index(i)
 
 		// see if there's already a letter there
-		if currentLetter, isSet := board.get(x, y); isSet {
+		if currentLetter, isSet := board.GetLetter(x, y); isSet {
 			if currentLetter != letter {
 				return PlacementResult{}, WordConflictError{
 					X:    x,
@@ -129,9 +129,13 @@ func (board *Board) getModifier(x, y int) (Modifier, bool) {
 	return board.Config.Modifiers.Get(x, y)
 }
 
-func (board *Board) get(x, y int) (rune, bool) {
+func (board *Board) GetLetter(x, y int) (rune, bool) {
 	letter, exists := board.Grid[NewPoint(x, y)]
 	return letter, exists
+}
+
+func (board *Board) GetModifier(x, y int) (Modifier, bool) {
+	return board.Config.Modifiers.Get(x, y)
 }
 
 func (board *Board) placeWord(w Word) (PlacementResult, error) {
@@ -197,7 +201,7 @@ func (board *Board) wordFormedByNewLetter(letter rune, x, y int, direction Direc
 
 	// starting as far before as possible
 	for {
-		letter, isSet := board.get(startX-dx, startY-dy)
+		letter, isSet := board.GetLetter(startX-dx, startY-dy)
 		if !isSet {
 			break
 		}
@@ -211,7 +215,7 @@ func (board *Board) wordFormedByNewLetter(letter rune, x, y int, direction Direc
 	endX := x
 	endY := y
 	for {
-		letter, isSet := board.get(endX+dx, endY+dy)
+		letter, isSet := board.GetLetter(endX+dx, endY+dy)
 		if !isSet {
 			break
 		}

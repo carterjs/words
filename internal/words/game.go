@@ -11,6 +11,7 @@ import (
 
 type (
 	Game struct {
+		Started        bool
 		ID             string
 		PassphraseHash []byte
 		Round          int
@@ -30,11 +31,7 @@ type (
 	}
 )
 
-func NewGame(config Config, players ...string) (*Game, error) {
-	if len(players) < 1 {
-		return nil, ErrNotEnoughPlayers
-	}
-
+func NewGame(config Config, players ...string) *Game {
 	id := uuid.NewString()
 
 	game := &Game{
@@ -46,15 +43,36 @@ func NewGame(config Config, players ...string) (*Game, error) {
 	}
 
 	for _, player := range players {
+		slog.Info("Adding player", "player", player)
 		game.Players = append(game.Players, *newPlayer(id, player))
+	}
+
+	return game
+}
+
+func (game *Game) AddPlayer(name string) (*Player, error) {
+	if game.Started {
+		return nil, ErrGameStarted
+	}
+
+	player := newPlayer(game.ID, name)
+	game.Players = append(game.Players, *player)
+	return player, nil
+}
+
+func (game *Game) Start() error {
+	if len(game.Players) < 1 {
+		return ErrNotEnoughPlayers
 	}
 
 	err := game.fillPlayerRacks()
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	return game, nil
+	game.Started = true
+
+	return nil
 }
 
 func (game *Game) LettersRemaining() int {
@@ -154,6 +172,10 @@ func (game *Game) GetPlayerByName(name string) *Player {
 }
 
 func (game *Game) CheckWord(playerID string, word Word) (PlacementResult, error) {
+	if !game.Started {
+		return PlacementResult{}, ErrGameNotStarted
+	}
+
 	player := game.GetPlayerByID(playerID)
 	if player == nil {
 		return PlacementResult{}, ErrPlayerNotFound
@@ -173,9 +195,17 @@ func (game *Game) CheckWord(playerID string, word Word) (PlacementResult, error)
 	return result, nil
 }
 
-func (game *Game) PlayWord(word Word) (PlacementResult, error) {
-	player := &game.Players[game.Turn]
-	result, err := game.CheckWord(player.ID, word)
+func (game *Game) PlayWord(playerID string, word Word) (PlacementResult, error) {
+	if !game.Started {
+		return PlacementResult{}, ErrGameNotStarted
+	}
+
+	player := game.GetPlayerByID(playerID)
+	if game.Players[game.Turn].ID != playerID {
+		return PlacementResult{}, ErrNotYourTurn
+	}
+
+	result, err := game.CheckWord(playerID, word)
 	if err != nil {
 		return PlacementResult{}, err
 	}
@@ -195,12 +225,16 @@ func (game *Game) PlayWord(word Word) (PlacementResult, error) {
 
 	player.RecordResult(result)
 
-	game.AdvanceTurn()
+	game.advanceTurn()
 
 	return result, nil
 }
 
 func (game *Game) Undo() error {
+	if !game.Started {
+		return ErrGameNotStarted
+	}
+
 	lastTurn := game.Turn - 1
 	if lastTurn < 0 {
 		lastTurn = len(game.Players) - 1
@@ -225,7 +259,7 @@ func (game *Game) Undo() error {
 	lastPlayer.giveLetters(lastTurnResult.LettersUsed)
 	game.PoolIndex -= len(lastTurnResult.LettersUsed)
 
-	// now shuffle everything after game.PoolIndex so that the player doesn't get the same letters again
+	// now shuffle everything after game.PoolIndex so that the player doesn't GetLetter the same letters again
 	rand.Shuffle(len(game.Pool[game.PoolIndex:]), func(i, j int) {
 		game.Pool[game.PoolIndex+i], game.Pool[game.PoolIndex+j] = game.Pool[game.PoolIndex+j], game.Pool[game.PoolIndex+i]
 	})
@@ -233,7 +267,7 @@ func (game *Game) Undo() error {
 	return nil
 }
 
-func (game *Game) AdvanceTurn() {
+func (game *Game) advanceTurn() {
 	nextTurn := game.Turn + 1
 	if nextTurn >= len(game.Players) {
 		nextTurn = 0

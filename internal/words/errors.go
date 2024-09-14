@@ -21,6 +21,9 @@ var (
 	ErrFirstWordNotCentered = errors.New("first word must be centered")
 	ErrNotPlayersTurn       = errors.New("not player's turn")
 	ErrNothingToUndo        = errors.New("nothing to undo")
+	ErrGameNotStarted       = errors.New("game not started")
+	ErrNotYourTurn          = errors.New("not your turn")
+	ErrGameStarted          = errors.New("game already started")
 )
 
 type WordConflictError struct {
