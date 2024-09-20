@@ -24,6 +24,7 @@ var (
 	ErrGameNotStarted       = errors.New("game not started")
 	ErrNotYourTurn          = errors.New("not your turn")
 	ErrGameStarted          = errors.New("game already started")
+	ErrIncomplete           = errors.New("word is incomplete")
 )
 
 type WordConflictError struct {

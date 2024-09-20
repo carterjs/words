@@ -1,64 +1,60 @@
 package words
 
-import "github.com/google/uuid"
-
 type (
 	Word struct {
-		ID        string
-		X         int
-		Y         int
+		Start     Point
 		Direction Direction
 		Letters   []rune
-		Blanks    map[int]struct{}
+		Blanks    map[Point]struct{}
 	}
 )
 
 var BlankLetter = '_'
 
-func NewWord(x, y int, direction Direction, value string) Word {
+func NewWord(start Point, direction Direction, value string) Word {
 	return Word{
-		ID:        uuid.NewString(),
-		X:         x,
-		Y:         y,
+		Start:     start,
 		Direction: direction,
 		Letters:   []rune(value),
 	}
 }
 
-func (word Word) WithBlank(index int) Word {
+func (word Word) WithBlanks(points ...Point) Word {
 	if word.Blanks == nil {
-		word.Blanks = make(map[int]struct{})
+		word.Blanks = make(map[Point]struct{})
 	}
 
-	word.Blanks[index] = struct{}{}
+	for _, point := range points {
+		word.Blanks[point] = struct{}{}
+	}
 
 	return word
 }
 
-func (word Word) Index(i int) (int, int, rune, bool) {
-	dx, dy := word.Direction.Vector(i)
-	x, y := word.X+dx, word.Y+dy
+func (word Word) Index(i int) (Point, rune, bool) {
+	point := word.Start.Offset(word.Direction.Vector(i))
 
 	if i < 0 || i >= len(word.Letters) {
-		return x, y, 0, false
+		return point, 0, false
 	}
 
-	return x, y, word.Letters[i], true
+	return point, word.Letters[i], true
 }
 
-func (word Word) Get(x, y int) (rune, bool) {
+func (word Word) Get(point Point) (rune, bool) {
+	x, y := point.X(), point.Y()
 	dx, dy := word.Direction.Vector(1)
 
-	if x < word.X || y < word.Y {
+	if x < word.Start.X() || y < word.Start.Y() {
 		return 0, false
 	}
 
-	if x >= word.X && x < word.X+dx*len(word.Letters) && y == word.Y {
-		return word.Letters[x-word.X], true
+	if x >= word.Start.X() && x < word.Start.X()+dx*len(word.Letters) && y == word.Start.Y() {
+		return word.Letters[x-word.Start.X()], true
 	}
 
-	if y >= word.Y && y < word.Y+dy*len(word.Letters) && x == word.X {
-		return word.Letters[y-word.Y], true
+	if y >= word.Start.Y() && y < word.Start.Y()+dy*len(word.Letters) && x == word.Start.X() {
+		return word.Letters[y-word.Start.Y()], true
 	}
 
 	return 0, false
@@ -68,7 +64,8 @@ func (word Word) Get(x, y int) (rune, bool) {
 func (word Word) String() string {
 	var s string
 	for i, letter := range word.Letters {
-		if _, ok := word.Blanks[i]; ok {
+		p, _, _ := word.Index(i)
+		if _, ok := word.Blanks[p]; ok {
 			s += string(BlankLetter)
 		} else {
 			s += string(letter)

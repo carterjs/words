@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 	"log/slog"
 	"math/rand"
+	"sort"
 )
 
 type (
@@ -39,11 +40,10 @@ func NewGame(config Config, players ...string) *Game {
 		Round:  1,
 		Config: config,
 		Pool:   config.getInitialLetterPool(),
-		Board:  newBoard(id, config),
+		Board:  NewBoard(id, config),
 	}
 
 	for _, player := range players {
-		slog.Info("Adding player", "player", player)
 		game.Players = append(game.Players, *newPlayer(id, player))
 	}
 
@@ -171,6 +171,39 @@ func (game *Game) GetPlayerByName(name string) *Player {
 	return nil
 }
 
+func (game *Game) FindPlacements(playerID string, point Point, s string) ([]PlacementResult, error) {
+	if !game.Started {
+		return nil, ErrGameNotStarted
+	}
+
+	var placements []PlacementResult
+	// check the word starting at each position for each direction
+	for _, direction := range []Direction{DirectionHorizontal, DirectionVertical} {
+		for i := range len(s) {
+			word := NewWord(point.Offset(direction.Vector(-i)), direction, s)
+
+			// check placement
+			result, err := game.CheckWord(playerID, word)
+			if err != nil {
+				continue
+			}
+
+			placements = append(placements, result)
+		}
+	}
+
+	if len(placements) == 0 {
+		return nil, ErrCannotPlayWord
+	}
+
+	// stable sort by points
+	sort.SliceStable(placements, func(i, j int) bool {
+		return placements[i].Points > placements[j].Points
+	})
+
+	return placements, nil
+}
+
 func (game *Game) CheckWord(playerID string, word Word) (PlacementResult, error) {
 	if !game.Started {
 		return PlacementResult{}, ErrGameNotStarted
@@ -186,8 +219,21 @@ func (game *Game) CheckWord(playerID string, word Word) (PlacementResult, error)
 		return PlacementResult{}, err
 	}
 
-	if !player.hasLetters(result.LettersUsed) {
+	canPlay, blanks := player.hasLettersWithBlanks(result.LettersUsed)
+	if !canPlay {
 		return PlacementResult{}, ErrCannotPlayWord
+	}
+
+	if len(blanks) > 0 {
+		// recalculate placement result with blanks
+		for point := range blanks {
+			word = word.WithBlanks(point)
+		}
+
+		result, err = game.Board.tryWordPlacement(word)
+		if err != nil {
+			return PlacementResult{}, err
+		}
 	}
 
 	// TODO: dictionary check
@@ -210,10 +256,10 @@ func (game *Game) PlayWord(playerID string, word Word) (PlacementResult, error) 
 		return PlacementResult{}, err
 	}
 
-	player.takeLetters(result.LettersUsed)
+	player.takeLetters(lettersFromMap(result.LettersUsed))
 
 	// place word on board
-	result, err = game.Board.placeWord(word)
+	result, err = game.Board.PlaceWord(word)
 	if err != nil {
 		return PlacementResult{}, err
 	}
@@ -224,6 +270,8 @@ func (game *Game) PlayWord(playerID string, word Word) (PlacementResult, error) 
 	}
 
 	player.RecordResult(result)
+
+	game.Players[game.Turn] = *player
 
 	game.advanceTurn()
 
@@ -256,7 +304,7 @@ func (game *Game) Undo() error {
 	// put back same letters given to player
 	lettersGiven := game.Pool[game.PoolIndex-len(lastTurnResult.LettersUsed) : game.PoolIndex]
 	lastPlayer.takeLetters(lettersGiven)
-	lastPlayer.giveLetters(lastTurnResult.LettersUsed)
+	lastPlayer.giveLetters(lettersFromMap(lastTurnResult.LettersUsed))
 	game.PoolIndex -= len(lastTurnResult.LettersUsed)
 
 	// now shuffle everything after game.PoolIndex so that the player doesn't GetLetter the same letters again
@@ -265,6 +313,14 @@ func (game *Game) Undo() error {
 	})
 
 	return nil
+}
+
+func lettersFromMap(m map[Point]rune) []rune {
+	var letters []rune
+	for _, letter := range m {
+		letters = append(letters, letter)
+	}
+	return letters
 }
 
 func (game *Game) advanceTurn() {

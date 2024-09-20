@@ -186,7 +186,7 @@ func Command() *cobra.Command {
 //		word := words.NewWord(x, y, direction, letters)
 //		if len(blanks) > 0 {
 //			for _, i := range blanks {
-//				word = word.WithBlank(i)
+//				word = word.WithBlanks(i)
 //			}
 //		}
 //

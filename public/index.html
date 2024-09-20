@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>Words!</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<svg id="board"></svg>
+<section id="game">
+  <ul id="players"></ul>
+  <ul id="rack"></ul>
+  <button id="start" hidden="true">Start game</button>
+</section>
+<section id="play" hidden="true">
+  <h2>Play</h2>
+  <form id="join-game">
+    <h3>Join a game</h3>
+    <label>
+      Game ID
+      <input type="text" name="gameId" required>
+    </label>
+    <label>
+      Player Name
+      <input type="text" name="playerName" required>
+    </label>
+    <button type="submit">Join</button>
+  </form>
+  <form id="create-game">
+    <h3>Create a game</h3>
+    <label>
+      Player Name
+      <input type="text" name="playerName" required>
+    </label>
+    <button type="submit">Create</button>
+  </form>
+</section>
+<script src="/script.js"></script>
+</body>
+</html>

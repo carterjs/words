@@ -1,57 +1,40 @@
 package words
 
-import (
-	"fmt"
-	"strings"
-)
-
 type PlacementResult struct {
-	LettersUsed       []rune
-	DirectWord        Word
-	IndirectWords     []Word
-	Modifiers         map[int]Modifier
-	Points            int
-	PointsExplanation string
+	LettersUsed   map[Point]rune
+	DirectWord    Word
+	IndirectWords []Word
+	Modifiers     map[int]Modifier
+	Points        int
 }
 
 func (placementResult PlacementResult) withComputedPoints(letterPoints map[rune]int) PlacementResult {
-	score, explanation := scoreWord(placementResult.DirectWord, letterPoints, placementResult.Modifiers)
+	score := scoreWord(placementResult.DirectWord, letterPoints, placementResult.Modifiers)
 	for _, w := range placementResult.IndirectWords {
-		wordScore, wordExplanation := scoreWord(w, letterPoints, nil)
+		wordScore := scoreWord(w, letterPoints, nil)
 		score += wordScore
-		explanation += " + " + wordExplanation
 	}
 
 	placementResult.Points = score
-	placementResult.PointsExplanation = explanation
 
 	return placementResult
 }
 
-func scoreWord(w Word, letterPoints map[rune]int, modifiers map[int]Modifier) (int, string) {
+func scoreWord(w Word, letterPoints map[rune]int, modifiers map[int]Modifier) int {
 	var score int
-	explanation := fmt.Sprintf("%s=", w.String())
 
 	for i, letter := range w.Letters {
-		if i > 0 {
-			explanation += "+"
-		}
-
-		if _, isBlank := w.Blanks[i]; isBlank {
-			explanation += fmt.Sprintf("%d", letterPoints[BlankLetter])
+		point, _, _ := w.Index(i)
+		if _, isBlank := w.Blanks[point]; isBlank {
 			continue
 		}
 
 		letterScore := letterPoints[letter]
+
 		if modifier, hasModifier := modifiers[i]; hasModifier {
-			before := letterScore
 			letterScore = modifier.ModifyLetterScore(letterScore)
-			if before != letterScore {
-				explanation += fmt.Sprintf("%s%d=", string(modifier), before)
-			}
 		}
 
-		explanation += fmt.Sprint(letterScore)
 		score += letterScore
 	}
 
@@ -64,10 +47,5 @@ func scoreWord(w Word, letterPoints map[rune]int, modifiers map[int]Modifier) (i
 		}
 	}
 
-	if len(wordModifiers) > 0 {
-		explanation = fmt.Sprintf("(%s)(%s)", strings.Join(wordModifiers, "*"), explanation)
-	}
-
-	explanation += fmt.Sprintf(" = %d", score)
-	return score, explanation
+	return score
 }

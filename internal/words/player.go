@@ -47,6 +47,30 @@ func (player *Player) hasLetters(letters []rune) bool {
 	return true
 }
 
+func (player *Player) hasLettersWithBlanks(lettersUsed map[Point]rune) (bool, map[Point]rune) {
+	playerLetters := make(map[rune]int)
+	for _, letter := range player.Letters {
+		playerLetters[letter]++
+	}
+
+	blanks := make(map[Point]rune)
+
+	for point, letter := range lettersUsed {
+		if playerLetters[letter] == 0 {
+			if playerLetters[BlankLetter] == 0 {
+				return false, nil
+			}
+
+			playerLetters[BlankLetter]--
+			blanks[point] = BlankLetter
+		} else {
+			playerLetters[letter]--
+		}
+	}
+
+	return true, blanks
+}
+
 func (player *Player) giveLetters(letters []rune) {
 	player.Letters = append(player.Letters, letters...)
 }

@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 )
 
@@ -69,6 +70,7 @@ func (server *Server) Handler() *http.ServeMux {
 
 	mux.Handle("GET /health", server.handleGetHealth())
 	mux.Handle("GET /ws", server.handleWS())
+	mux.Handle("GET /", server.handlePublic())
 
 	return mux
 }
@@ -86,5 +88,20 @@ func (server *Server) handleGetHealth() http.HandlerFunc {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+	}
+}
+
+func (server *Server) handlePublic() http.HandlerFunc {
+	fs := http.FileServer(http.Dir("public"))
+
+	return func(writer http.ResponseWriter, r *http.Request) {
+		// if it has a file extension, serve file
+		if strings.Contains(r.URL.Path, ".") || strings.Count(r.URL.Path, "/") > 1 {
+			fs.ServeHTTP(writer, r)
+			return
+		}
+
+		// otherwise, serve index.html
+		http.ServeFile(writer, r, "public/index.html")
 	}
 }
