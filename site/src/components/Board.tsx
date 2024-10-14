@@ -3,9 +3,7 @@ import {
   useEffect,
   useMemo,
   useState,
-  type MouseEvent,
   type PointerEvent,
-  type TouchEvent,
 } from "react";
 import styles from "./Board.module.css";
 
@@ -71,6 +69,14 @@ export default function Board({
     },
     [displacementX, displacementY]
   );
+
+  useEffect(() => {
+    const doNothing = () => {};
+    window.addEventListener("pointermove", doNothing);
+    return () => {
+      window.removeEventListener("pointermove", doNothing);
+    };
+  });
 
   return (
     <svg
