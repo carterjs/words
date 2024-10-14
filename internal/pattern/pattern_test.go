@@ -1,8 +1,9 @@
 package pattern_test
 
 import (
-	"github.com/carterjs/words/internal/pattern"
 	"testing"
+
+	"github.com/carterjs/words/internal/pattern"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -27,17 +28,7 @@ func TestPattern(t *testing.T) {
 					},
 				},
 			},
-			expected: []string{
-				"_________",
-				"_X_____X_",
-				"_________",
-				"___X_X___",
-				"_________",
-				"___X_X___",
-				"_________",
-				"_X_____X_",
-				"_________",
-			},
+			expected: []string{"X_______X", "_________", "__X___X__", "_________", "____X____", "_________", "__X___X__", "_________", "X_______X"},
 		},
 		{
 			name: "pattern spaced x",
@@ -51,17 +42,7 @@ func TestPattern(t *testing.T) {
 					},
 				},
 			},
-			expected: []string{
-				"X_______X",
-				"_________",
-				"__X___X__",
-				"___X_X___",
-				"_________",
-				"___X_X___",
-				"__X___X__",
-				"_________",
-				"X_______X",
-			},
+			expected: []string{"X_______X", "_X_____X_", "_________", "___X_X___", "____X____", "___X_X___", "_________", "_X_____X_", "X_______X"},
 		},
 		{
 			name: "3x2 grid",
@@ -69,8 +50,8 @@ func TestPattern(t *testing.T) {
 				Value: true,
 				Grids: []pattern.Grid{
 					{
-						Width:  2,
-						Height: 1,
+						Width:  3,
+						Height: 2,
 					},
 				},
 			},
@@ -81,36 +62,36 @@ func TestPattern(t *testing.T) {
 			},
 		},
 		{
-			name: "2x3 grid",
-			pattern: pattern.Pattern[bool]{
-				Value: true,
-				Grids: []pattern.Grid{
-					{
-						Width:  2,
-						Height: 3,
-					},
-				},
-			},
-			expected: []string{
-				"_________",
-				"X_X_X_X_X",
-				"_________",
-				"_________",
-				"X_X_X_X_X",
-				"_________",
-				"_________",
-				"X_X_X_X_X",
-				"_________",
-			},
-		},
-		{
-			name: "3x3 grid",
+			name: "3x4 grid",
 			pattern: pattern.Pattern[bool]{
 				Value: true,
 				Grids: []pattern.Grid{
 					{
 						Width:  3,
-						Height: 3,
+						Height: 4,
+					},
+				},
+			},
+			expected: []string{
+				"_________",
+				"X_X_X_X_X",
+				"_________",
+				"_________",
+				"X_X_X_X_X",
+				"_________",
+				"_________",
+				"X_X_X_X_X",
+				"_________",
+			},
+		},
+		{
+			name: "4x4 grid",
+			pattern: pattern.Pattern[bool]{
+				Value: true,
+				Grids: []pattern.Grid{
+					{
+						Width:  4,
+						Height: 4,
 					},
 				},
 			},

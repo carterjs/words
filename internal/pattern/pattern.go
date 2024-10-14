@@ -81,6 +81,10 @@ func (diagonals BothDiagonals) match(x, y int) bool {
 
 	d := int(math.Abs(float64(x))) + diagonals.StartAt
 
+	if diagonals.SkipCount == 0 && diagonals.MatchCount == 0 {
+		return false
+	}
+
 	series := d % (diagonals.SkipCount + diagonals.MatchCount)
 	return series < diagonals.MatchCount
 }
@@ -88,5 +92,10 @@ func (diagonals BothDiagonals) match(x, y int) bool {
 func (grid Grid) match(x, y int) bool {
 	x = x - grid.X
 	y = y - grid.Y
+
+	if grid.Width <= 1 || grid.Height <= 1 {
+		return false
+	}
+
 	return x%(grid.Width-1) == 0 && y%(grid.Height-1) == 0
 }
