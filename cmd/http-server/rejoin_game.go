@@ -1,7 +1,9 @@
-package server
+package main
 
 import (
 	"context"
+	"log"
+
 	"github.com/carterjs/words/internal/words"
 	"github.com/gorilla/websocket"
 )
@@ -59,12 +61,13 @@ func (req rejoinGameRequest) Execute(server *Server, conn *websocket.Conn) error
 	}
 
 	return server.broadcastResponse(game.ID, func(s session) (string, any) {
+		log.Println(game.Board.MinX, game.Board.MinY, game.Board.MaxX, game.Board.MaxY)
 		if s.playerID == player.ID {
 			return "rejoin_game", rejoinGameResponse{
 				GameID:       game.ID,
 				PlayerID:     player.ID,
 				Turn:         game.Turn,
-				Grid:         getGrid(game, -8, -8, 8, 8),
+				Grid:         getFullGrid(game),
 				Rack:         rack,
 				Players:      players,
 				Started:      game.Started,

@@ -1,8 +1,10 @@
-package server
+package main
 
 import (
 	"context"
 	"fmt"
+
+	"github.com/carterjs/words/internal/words"
 	"github.com/gorilla/websocket"
 )
 
@@ -13,10 +15,11 @@ type (
 	}
 
 	joinGameResponse struct {
-		GameID       string         `json:"gameId"`
-		PlayerID     string         `json:"playerId"`
-		Players      []playerInfo   `json:"players"`
-		LetterPoints map[string]int `json:"letterPoints"`
+		GameID       string                 `json:"gameId"`
+		PlayerID     string                 `json:"playerId"`
+		Players      []playerInfo           `json:"players"`
+		LetterPoints map[string]int         `json:"letterPoints"`
+		Grid         map[words.Point]string `json:"grid"`
 	}
 
 	playerInfo struct {
@@ -66,6 +69,7 @@ func (req joinGameRequest) Execute(server *Server, conn *websocket.Conn) error {
 				PlayerID:     player.ID,
 				Players:      players,
 				LetterPoints: letterPoints,
+				Grid:         getFullGrid(game),
 			}
 		}
 

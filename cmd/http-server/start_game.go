@@ -1,8 +1,9 @@
-package server
+package main
 
 import (
 	"context"
 	"fmt"
+
 	"github.com/carterjs/words/internal/words"
 	"github.com/gorilla/websocket"
 )
@@ -47,7 +48,7 @@ func (req startGameRequest) Execute(server *Server, conn *websocket.Conn) error 
 
 		return "start_game", startGameResponse{
 			Turn: game.Turn,
-			Grid: getGrid(game, game.Board.MinX, game.Board.MinY, game.Board.MaxX, game.Board.MaxY),
+			Grid: getFullGrid(game),
 			Rack: letterRack,
 		}
 	})

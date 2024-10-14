@@ -265,10 +265,10 @@ func (board *Board) String() string {
 
 	buffer := 1
 	width := 3
-	minX := -8
-	maxX := 8
-	minY := -8
-	maxY := 8
+	minX := -16
+	maxX := 16
+	minY := -16
+	maxY := 16
 
 	if board.MinX <= minX {
 		minX = board.MinX - buffer

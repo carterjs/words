@@ -1,8 +1,9 @@
-package server
+package main
 
 import (
 	"context"
 	"fmt"
+
 	"github.com/carterjs/words/internal/words"
 	"github.com/gorilla/websocket"
 )
@@ -71,7 +72,7 @@ func (req playWordRequest) Execute(server *Server, conn *websocket.Conn) error {
 		if s.playerID == playerID {
 			return playWordResponseType, playWordResponse{
 				Word:    string(word.Letters),
-				Grid:    getGrid(game, 0, 0, 14, 14),
+				Grid:    getPartialGrid(game, word.Start.X(), word.Start.Y(), last.X(), last.Y()),
 				Points:  result.Points,
 				NewRack: newRack,
 			}
@@ -79,7 +80,7 @@ func (req playWordRequest) Execute(server *Server, conn *websocket.Conn) error {
 
 		return playWordResponseType, newWordResponse{
 			Word:   string(word.Letters),
-			Grid:   getGrid(game, word.Start.X(), word.Start.Y(), last.X(), last.Y()),
+			Grid:   getPartialGrid(game, word.Start.X(), word.Start.Y(), last.X(), last.Y()),
 			Points: result.Points,
 		}
 	})

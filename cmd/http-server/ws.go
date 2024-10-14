@@ -1,12 +1,13 @@
-package server
+package main
 
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/carterjs/words/internal/words"
-	"github.com/gorilla/websocket"
 	"log/slog"
 	"net/http"
+
+	"github.com/carterjs/words/internal/words"
+	"github.com/gorilla/websocket"
 )
 
 type request interface {
@@ -31,11 +32,16 @@ func (server *Server) handleWS() http.HandlerFunc {
 	var upgrader = websocket.Upgrader{
 		ReadBufferSize:  1024,
 		WriteBufferSize: 1024,
+		CheckOrigin: func(r *http.Request) bool {
+			// TODO: only allow all in development
+			return true
+		},
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
+			slog.Error("error upgrading connection", "error", err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -166,7 +172,11 @@ func (server *Server) broadcastResponse(gameID string, get func(session) (string
 	return nil
 }
 
-func getGrid(game *words.Game, x1, y1, x2, y2 int) map[words.Point]string {
+func getFullGrid(game *words.Game) map[words.Point]string {
+	return getPartialGrid(game, min(game.Board.MinX, -minimumBoardSize), min(game.Board.MinY, -minimumBoardSize), max(game.Board.MaxX, minimumBoardSize), max(game.Board.MaxY, minimumBoardSize))
+}
+
+func getPartialGrid(game *words.Game, x1, y1, x2, y2 int) map[words.Point]string {
 	grid := make(map[words.Point]string)
 
 	for x := x1; x <= x2; x++ {
