@@ -1,0 +1,46 @@
+# flyctl launch added from .gitignore
+**/.vscode
+**/.DS_Store
+**/.idea
+
+# flyctl launch added from .idea/.gitignore
+# Default ignored files
+.idea/shelf
+.idea/workspace.xml
+# Editor-based HTTP Client requests
+.idea/httpRequests
+# Datasource local storage ignored files
+.idea/dataSources
+.idea/dataSources.local.xml
+
+# flyctl launch added from internal/accesslog/.gitignore
+internal/accesslog/**/.vscode
+internal/accesslog/**/.DS_Store
+internal/accesslog/**/.idea
+
+# flyctl launch added from site/.gitignore
+# build output
+site/**/dist
+# generated types
+site/**/.astro
+
+# dependencies
+site/**/node_modules
+
+# logs
+site/**/npm-debug.log*
+site/**/yarn-debug.log*
+site/**/yarn-error.log*
+site/**/pnpm-debug.log*
+
+
+# environment variables
+site/**/.env
+site/**/.env.production
+
+# macOS-specific files
+site/**/.DS_Store
+
+# jetbrains setting folder
+site/**/.idea
+fly.toml
