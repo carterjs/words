@@ -1,0 +1,42 @@
+.form {
+    display: block;
+    border: 2px dashed rgba(0,0,0,0.25);
+    border-radius: 0.5rem;
+    padding: 1rem;
+    align-self: center;
+    box-sizing: border-box;
+    max-width: 100%;
+}
+
+.controls {
+    position: fixed;
+    display: flex;
+    align-items: center;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background-color: rgba(255,255,255,0.25);
+    backdrop-filter: blur(10px);
+    padding: 0.5rem;
+    height: 4rem;
+}
+
+.rack {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    justify-content: center;
+    flex-wrap: wrap;
+}
+
+.rack li {
+    font-size: 20px;
+    width: 3rem;
+    line-height: 3rem;
+    text-align: center;
+    background-color: #fff;
+    margin: 0.5rem;
+    border-radius: 0.5rem;
+    cursor: pointer;
+}
