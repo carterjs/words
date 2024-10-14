@@ -1,4 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type MouseEvent,
+  type PointerEvent,
+  type TouchEvent,
+} from "react";
 import styles from "./Board.module.css";
 
 type Props = {
@@ -24,7 +32,7 @@ export default function Board({
   fullScreen = false,
   allowPanning = false,
   cellSize = 50,
-  padding = 20,
+  padding = 10,
 }: Props) {
   const [startX, setStartX] = useState<number | null>(null);
   const [startY, setStartY] = useState<number | null>(null);
@@ -37,11 +45,39 @@ export default function Board({
     return allPoints(grid, offsetX, offsetY, width, height, cellSize);
   }, [grid, offsetX, offsetY, width, height, cellSize]);
 
+  const startDrag = useCallback((e: PointerEvent) => {
+    setStartX(e.clientX);
+    setStartY(e.clientY);
+  }, []);
+
+  const drag = useCallback(
+    (e: PointerEvent) => {
+      if (startX !== null && startY !== null && allowPanning) {
+        setDisplacementX(startX - e.clientX);
+        setDisplacementY(startY - e.clientY);
+      }
+    },
+    [startX, startY, allowPanning]
+  );
+
+  const stopDrag = useCallback(
+    (e: PointerEvent) => {
+      setOffsetX((prevOffsetX) => prevOffsetX + displacementX);
+      setOffsetY((prevOffsetY) => prevOffsetY + displacementY);
+      setDisplacementX(0);
+      setDisplacementY(0);
+      setStartX(null);
+      setStartY(null);
+    },
+    [displacementX, displacementY]
+  );
+
   return (
     <svg
       className={styles.board}
-      style={
-        fullScreen
+      style={{
+        touchAction: "none",
+        ...(fullScreen
           ? {
               position: "fixed",
               top: 0,
@@ -52,35 +88,12 @@ export default function Board({
           : {
               width: width + padding,
               height: height + padding,
-            }
-      }
+            }),
+      }}
       viewBox={`${(offsetX + displacementX) / scale - padding / 2} ${(offsetY + displacementY) / scale - padding / 2} ${width / scale + padding} ${height / scale + padding}`}
-      onMouseDown={(e) => {
-        setStartX(e.clientX);
-        setStartY(e.clientY);
-      }}
-      onMouseMove={(e) => {
-        if (startX !== null && startY !== null && allowPanning) {
-          setDisplacementX(startX - e.clientX);
-          setDisplacementY(startY - e.clientY);
-        }
-      }}
-      onMouseLeave={(e) => {
-        setOffsetX(offsetX + displacementX);
-        setOffsetY(offsetY + displacementY);
-        setDisplacementX(0);
-        setDisplacementY(0);
-        setStartX(null);
-        setStartY(null);
-      }}
-      onMouseUp={(e) => {
-        setOffsetX(offsetX + displacementX);
-        setOffsetY(offsetY + displacementY);
-        setDisplacementX(0);
-        setDisplacementY(0);
-        setStartX(null);
-        setStartY(null);
-      }}
+      onPointerDown={startDrag}
+      onPointerMove={drag}
+      onPointerUp={stopDrag}
     >
       {allPointsMemoized.map(([x, y]) => {
         const key = `${x},${y}`;
@@ -92,9 +105,6 @@ export default function Board({
           <g
             key={key}
             fontSize={cellSize / 2}
-            onClick={() => {
-              console.log("clicked", x, y);
-            }}
             className={styles.cell}
             style={{
               transformOrigin: `${(x + 0.5) * cellSize}px ${(y + 0.5) * cellSize}px`,
