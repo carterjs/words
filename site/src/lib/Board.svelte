@@ -1,5 +1,7 @@
 <script lang="ts">
     import type {Cell} from "$lib/game.svelte";
+    import Tile from "$lib/Tile.svelte";
+    import Modifier from "$lib/Modifier.svelte";
 
     type Props = {
         letterPoints?: Record<string, number>;
@@ -62,10 +64,10 @@
     }
 
     $effect(() => {
-        let newMinX = Math.min(minX, Math.floor(offsetX / cellSize));
-        let newMinY = Math.min(minY, Math.floor(offsetY / cellSize));
-        let newMaxX = Math.max(maxX, Math.ceil((offsetX + width) / cellSize));
-        let newMaxY = Math.max(maxY, Math.ceil((offsetY + height) / cellSize));
+        let newMinX = Math.min(minX, Math.floor(offsetX / cellSize) - 5);
+        let newMinY = Math.min(minY, Math.floor(offsetY / cellSize) - 5);
+        let newMaxX = Math.max(maxX, Math.ceil((offsetX + width) / cellSize) + 5);
+        let newMaxY = Math.max(maxY, Math.ceil((offsetY + height) / cellSize) + 5);
 
         if (newMinX != minX) {
             requestCells(newMinX, newMinY, minX, newMaxY);
@@ -94,10 +96,27 @@
     }))
 
     const precision = 2;
+
+    // this is overkill but fun
+    const points = 5;
+    const innerRadius = cellSize/7;
+    const outerRadius = cellSize/2.5;
+    const slice = Math.PI * 2 / points;
+    let starPoints = $derived(Array(points).fill(0).map((_, i) => {
+        return [
+            // outer point
+            `${Math.sin(i*slice - Math.PI) * outerRadius + cellSize/2} ${Math.cos(i*slice - Math.PI) * outerRadius + cellSize/2}`,
+            // inner point
+            `${Math.sin((i+0.5)*slice - Math.PI) * innerRadius + cellSize/2} ${Math.cos((i+0.5)*slice - Math.PI) * innerRadius + cellSize/2}`
+        ]
+    }).flat().join(","))
+
+    console.log("sp", starPoints)
 </script>
 
 <style>
     svg {
+        user-select: none;
         cursor: pointer;
         background-position: var(--offset-x) var(--offset-y);
         background-size: var(--cell-size) var(--cell-size);
@@ -108,8 +127,13 @@
         font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
     }
 
-    .tile {
-        filter: drop-shadow( 2px 3px 5px rgba(0, 0, 0, .25));
+    @keyframes fade-in {
+        from {
+            opacity: 0;
+        }
+        to {
+            opacity: 1;
+        }
     }
 </style>
 
@@ -124,66 +148,36 @@
         onpointercancel={handlePointerUp}
         onpointerleave={handlePointerUp}
 >
-    {#each visibleCells as { x, y, letter, modifier }}
-        {#if modifier}
-            <g>
-                <rect
-                        x={x*cellSize}
-                        y={y*cellSize}
-                        width={cellSize}
-                        height={cellSize}
-                        fill={{
-                                "DW": "rgba(255,170,255,0.75)",
-                                "DL": "rgba(170,170,255,0.75)",
-                                "TW": "rgba(255,170,170,0.75)",
-                                "TL": "rgba(255,170,170,0.75)",
-                            }[modifier]}
-                        stroke="none"
-                />
-                <text
-                        x={x*cellSize + cellSize/2}
-                        y={y*cellSize + cellSize/2}
-                        text-anchor="middle"
-                        dominant-baseline="middle"
-                        font-size={cellSize/4}
-                >
-                    {modifier}
-                </text>
-            </g>
-        {/if}
-        {#if letter}
-        <g>
-            <rect
-                    x={x*cellSize + 2}
-                    y={y*cellSize + 2}
-                    width={cellSize - 4}
-                    height={cellSize - 4}
-                    fill="#fff"
-                    stroke="rgba(0,0,0,0.5)"
-                    rx={cellSize/6}
-                    ry={cellSize/6}
-                    class="tile"
+    <rect
+            x={0}
+            y={0}
+            width={cellSize}
+            height={cellSize}
+            fill="rgba(255,255,255,0.75)"
+            stroke="rgba(0,0,0,0.125)"
+    />
+    <polygon
+            points={starPoints}
+            fill="rgba(0,255,0,0.25)"
+            stroke="rgba(0,0,0,0.25)"
+    />
+    {#each visibleCells as cell (cell)}
+        {#if cell.modifier}
+            <Modifier
+                cellSize={cellSize}
+                x={cell.x*cellSize}
+                y={cell.y*cellSize}
+                modifier={cell.modifier}
             />
-            <text
-                    x={x*cellSize + cellSize/2}
-                    y={y*cellSize + cellSize/2}
-                    text-anchor="middle"
-                    dominant-baseline="central"
-                    font-size={cellSize/3}
-            >
-                {letter}
-            </text>
-            <text
-                    x={(x+1)*cellSize - cellSize/5}
-                    y={(y+1)*cellSize - cellSize/4}
-                    text-anchor="end"
-                    dominant-baseline="central"
-                    fill="rgba(0,0,0,0.5)"
-                    font-size={cellSize/5}
-            >
-                {letterPoints[letter]}
-            </text>
-        </g>
+        {/if}
+        {#if cell.letter}
+            <Tile
+                cellSize={cellSize}
+                x={cell.x*cellSize}
+                y={cell.y*cellSize}
+                letter={cell.letter}
+                points={letterPoints[cell.letter]}
+            />
         {/if}
     {/each}
 </svg>

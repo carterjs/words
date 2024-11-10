@@ -1,11 +1,4 @@
-import {onMount} from "svelte";
-
 import { PUBLIC_API_URL } from '$env/static/public';
-
-type player = {
-    id: string;
-    name: string;
-}
 
 type board = {
     cells: Cell[]
@@ -20,13 +13,58 @@ export type Cell = {
 
 export  class GameController {
     id = $state<string>("");
+
     loaded = $state<boolean>(false);
+
     playerId = $state<string | null>(null);
-    rack = $state<string[]>([]);
+
+    #rack = $state<string[]>([]);
+
+    get rack() {
+        return this.#rack;
+    }
+
+    set rack(value: string[]) {
+        // sort by points
+        value.sort((a, b) => {
+            return this.letterPoints[b] - this.letterPoints[a];
+        });
+
+        this.#rack = value;
+        this.sortedRack = value;
+    }
+
+    updateSortedRack() {
+        this.sortedRack = this.sortedRack.sort((a, b) => {
+            // stable sort where letters not in the rack are sorted to the end
+            // adding 1 makes sure all letters in the word are sorted in placement order (including index 0)
+            // || 999 replaces all -1 (now 0) values with 999 so they go to the end
+            return (this.input.indexOf(a)+1 || 999) - (this.input.indexOf(b)+1 || 999);
+        });
+    }
+
+    sortedRack = $state<string[]>([]);
+
+    #input = $state<string>("");
+
+    get input() {
+        return this.#input;
+    }
+
+    set input(value: string) {
+        this.#input = value;
+        this.updateSortedRack();
+    }
+
     started = $state<boolean>(false);
+
     players = $state<{ id: string, name: string }[]>([]);
+
     messages = $state<string[]>([]);
+
     board = $state<board>({ cells: [] });
+
+    letterPoints = $state<{ [letter: string]: number }>({})
 
     async loadInitialData() {
         let resp = await fetch(`${PUBLIC_API_URL}/api/v1/games/${this.id}`, {
@@ -41,12 +79,14 @@ export  class GameController {
             started: boolean;
             players: { id: string, name: string }[];
             playerId: string | null;
-            rack: string[];
+            rack?: string[];
+            letterPoints: { [letter: string]: number };
         } = await resp.json();
 
         this.started = data.started;
         this.playerId = data.playerId;
-        this.rack = data.rack;
+        this.letterPoints = data.letterPoints;
+        this.rack = data.rack || [];
         this.players = data.players;
 
         resp = await fetch(`${PUBLIC_API_URL}/api/v1/games/${this.id}/board`, {
@@ -62,8 +102,6 @@ export  class GameController {
     }
 
     async loadBoard(minX: number, minY: number, maxX: number, maxY: number) {
-        console.log("loading board", minX, minY, maxX, maxY);
-
         let resp = await fetch(`${PUBLIC_API_URL}/api/v1/games/${this.id}/board?minX=${minX}&minY=${minY}&maxX=${maxX}&maxY=${maxY}`, {
             credentials: "include"
         });
@@ -86,8 +124,7 @@ export  class GameController {
 
            this.messages.push(`Player ${playerId} says: ${message}`);
         })
-        events.addEventListener("GAME_STARTED", (e) => {
-            console.log("received game started event");
+        events.addEventListener("GAME_STARTED", () => {
             this.started = true;
         })
     }

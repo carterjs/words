@@ -1,7 +1,7 @@
 <script lang="ts">
     import { PUBLIC_API_URL } from '$env/static/public';
 
-    import {afterNavigate, goto, pushState, replaceState} from "$app/navigation";
+    import {afterNavigate, goto, replaceState} from "$app/navigation";
     import Header from "$lib/Header.svelte";
     import { page } from '$app/stores'
     import {onMount} from "svelte";
@@ -95,11 +95,6 @@
         e.preventDefault();
 
         const url = PUBLIC_API_URL + "/api/v1/games";
-
-        console.log(JSON.stringify({
-            preset: preset?.id || "standard",
-            overrides
-        }));
 
         const resp = await fetch(url, {
             method: "POST",
@@ -201,7 +196,7 @@
             <tbody>
             {#each Object.entries(preset.letterDistribution) as [letter, count]}
                 <tr>
-                    <td>{letter == "_" ? "" : letter}</td>
+                    <td>{letter === "_" ? "" : letter}</td>
                     <td>
                         <input type="number" min="0" value={overrides.letterDistribution[letter] || count} onchange={(e) => {
                             overrides.letterDistribution[letter] = Number(e.target?.value);

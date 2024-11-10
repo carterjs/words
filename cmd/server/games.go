@@ -12,11 +12,12 @@ import (
 
 type (
 	gameResponse struct {
-		ID       string           `json:"id"`
-		Started  bool             `json:"started"`
-		Players  []playerResponse `json:"players"`
-		PlayerID string           `json:"playerId"`
-		Rack     []string         `json:"rack"`
+		ID           string           `json:"id"`
+		Started      bool             `json:"started"`
+		Players      []playerResponse `json:"players"`
+		LetterPoints map[string]int   `json:"letterPoints"`
+		PlayerID     string           `json:"playerId"`
+		Rack         []string         `json:"rack"`
 	}
 
 	partialGameResponse struct {
@@ -122,10 +123,16 @@ func constructGameResponse(r *http.Request, game *words.Game) gameResponse {
 		maxY = game.Board.MaxY
 	}
 
+	letterPoints := make(map[string]int)
+	for k, v := range game.Config.LetterPoints {
+		letterPoints[string(k)] = v
+	}
+
 	resp := gameResponse{
-		ID:      game.ID,
-		Started: game.Started,
-		Players: players,
+		ID:           game.ID,
+		Started:      game.Started,
+		Players:      players,
+		LetterPoints: letterPoints,
 	}
 
 	playerID, exists := getPlayerID(r)
