@@ -149,8 +149,8 @@ func (board *Board) GetLetter(point Point) (rune, bool) {
 	return letter, exists
 }
 
-func (board *Board) GetModifier(x, y int) (Modifier, bool) {
-	return board.Config.Modifiers.Get(x, y)
+func (board *Board) GetModifier(point Point) (Modifier, bool) {
+	return board.Config.Modifiers.Get(point.X(), point.Y())
 }
 
 func (board *Board) PlaceWord(w Word) (PlacementResult, error) {
@@ -252,7 +252,6 @@ func (board *Board) wordFormedByNewLetter(letter rune, point Point, direction Di
 }
 
 func (board *Board) String() string {
-	board.Config = StandardConfig
 	grid := make([][]rune, board.MaxY-board.MinY)
 	for i := range grid {
 		grid[i] = make([]rune, board.MaxX-board.MinX)

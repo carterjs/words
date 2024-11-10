@@ -9,17 +9,9 @@ type (
 		ID      string
 		GameID  string
 		Name    string
-		Status  Status
 		Letters []rune
 		Turns   []PlacementResult
 	}
-
-	Status string
-)
-
-const (
-	StatusActive   Status = "ACTIVE"
-	StatusInactive Status = "INACTIVE"
 )
 
 func newPlayer(gameID string, name string) *Player {
@@ -27,7 +19,6 @@ func newPlayer(gameID string, name string) *Player {
 		ID:     uuid.NewString(),
 		GameID: gameID,
 		Name:   name,
-		Status: StatusActive,
 	}
 }
 

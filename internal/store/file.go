@@ -60,6 +60,9 @@ func (fs *FS) GetGameByID(ctx context.Context, id string) (game *words.Game, err
 	// stream read file
 	f, err := os.Open(file)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
 		return nil, err
 	}
 	defer func() {

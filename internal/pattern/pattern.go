@@ -6,30 +6,31 @@ import (
 
 type (
 	Pattern[T any] struct {
-		Value         T
-		BothDiagonals []BothDiagonals
-		Grids         []Grid
-		Explicit      []Explicit
+		Value         T               `json:"value"`
+		BothDiagonals []BothDiagonals `json:"bothDiagonals"`
+		Grids         []Grid          `json:"grids"`
+		// TODO: remove explicit since it's not a pattern
+		Explicit []Explicit `json:"explicit"`
 	}
 
 	BothDiagonals struct {
-		X          int
-		Y          int
-		StartAt    int
-		SkipCount  int
-		MatchCount int
+		X          int `json:"x"`
+		Y          int `json:"y"`
+		StartAt    int `json:"startAt"`
+		SkipCount  int `json:"skipCount"`
+		MatchCount int `json:"matchCount"`
 	}
 
 	Grid struct {
-		X      int
-		Y      int
-		Width  int
-		Height int
+		X      int `json:"x"`
+		Y      int `json:"y"`
+		Width  int `json:"width"`
+		Height int `json:"height"`
 	}
 
 	Explicit struct {
-		X int
-		Y int
+		X int `json:"x"`
+		Y int `json:"y"`
 	}
 )
 

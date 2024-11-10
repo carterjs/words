@@ -1,34 +1,31 @@
 package words
 
 import (
-	"crypto"
 	_ "crypto/sha256"
 	"github.com/carterjs/words/internal/pattern"
 	"github.com/google/uuid"
-	"log/slog"
 	"math/rand"
 	"sort"
 )
 
 type (
 	Game struct {
-		Started        bool
-		ID             string
-		PassphraseHash []byte
-		Round          int
-		Config         Config
-		Pool           []rune
-		PoolIndex      int
-		Players        []Player
-		Turn           int
-		Board          *Board
+		Started   bool
+		ID        string
+		Round     int
+		Config    Config
+		Pool      []rune
+		PoolIndex int
+		Players   []Player
+		Turn      int
+		Board     *Board
 	}
 
 	Config struct {
-		LetterDistribution map[rune]int
-		LetterPoints       map[rune]int
-		RackSize           int
-		Modifiers          pattern.Group[Modifier]
+		LetterDistribution map[rune]int            `json:"letterDistribution"`
+		LetterPoints       map[rune]int            `json:"letterPoints"`
+		RackSize           int                     `json:"rackSize"`
+		Modifiers          pattern.Group[Modifier] `json:"modifiers"`
 	}
 )
 
@@ -98,26 +95,10 @@ func (game *Game) fillPlayerRack(player *Player) error {
 			return err
 		}
 
-		slog.Debug("Giving letters to player", "player", player.Name, "newLetters", string(hand))
 		player.giveLetters(hand)
 	}
 
 	return nil
-}
-
-func (game *Game) SetPassword(passphrase string) {
-	game.PassphraseHash = hashPassphrase(passphrase)
-}
-
-func (game *Game) PassphraseMatches(input string) bool {
-	inputHash := hashPassphrase(input)
-	return string(inputHash) == string(game.PassphraseHash)
-}
-
-func hashPassphrase(passphrase string) []byte {
-	hash := crypto.SHA256.New()
-	hash.Write([]byte(passphrase))
-	return hash.Sum(nil)
 }
 
 func (config Config) getInitialLetterPool() []rune {

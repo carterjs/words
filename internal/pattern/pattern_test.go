@@ -28,7 +28,17 @@ func TestPattern(t *testing.T) {
 					},
 				},
 			},
-			expected: []string{"X_______X", "_________", "__X___X__", "_________", "____X____", "_________", "__X___X__", "_________", "X_______X"},
+			expected: []string{
+				"X_______X",
+				"_________",
+				"__X___X__",
+				"_________",
+				"____X____",
+				"_________",
+				"__X___X__",
+				"_________",
+				"X_______X",
+			},
 		},
 		{
 			name: "pattern spaced x",
@@ -36,13 +46,24 @@ func TestPattern(t *testing.T) {
 				Value: true,
 				BothDiagonals: []pattern.BothDiagonals{
 					{
-						StartAt:    0,
-						SkipCount:  1,
 						MatchCount: 2,
+						SkipCount:  1,
+						StartAt:    0,
 					},
 				},
 			},
-			expected: []string{"X_______X", "_X_____X_", "_________", "___X_X___", "____X____", "___X_X___", "_________", "_X_____X_", "X_______X"},
+			expected: []string{
+				"X_______X",
+				"_X_____X_",
+
+				"_________",
+				"___X_X___",
+				"____X____",
+				"___X_X___",
+				"_________",
+				"_X_____X_",
+				"X_______X",
+			},
 		},
 		{
 			name: "3x2 grid",

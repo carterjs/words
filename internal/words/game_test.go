@@ -212,7 +212,7 @@ func TestGame_FindPlacements(t *testing.T) {
 }
 
 func newStartedGame(t *testing.T, players []words.Player, w ...words.Word) *words.Game {
-	game := words.NewGame(words.StandardConfig)
+	game := words.NewGame(words.Presets[0].Config)
 	game.Players = players
 
 	err := game.Start()
