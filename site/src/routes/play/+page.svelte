@@ -53,37 +53,25 @@
     }
 </style>
 
-<main>
-    {#if !game.loaded}
-        <p>Loading game...</p>
-    {:else}
-        {#if !game.playerId}
-            <label>
-                Name:
-                <input type="text" bind:value={name}>
-            </label>
+{#if !game.loaded}
+    <p>Loading game...</p>
+{:else}
+    {#if !game.playerId}
+        <label>
+            Name:
+            <input type="text" bind:value={name}>
+        </label>
 
-            <button onclick={async () => await game.join(name)}>Join game as {name}</button>
-        {:else}
-            <h1>Hello, {game.getPlayerById(game.playerId)?.name}</h1>
-            {#if !game.started}
-                <button onclick={async () => await game.start()}>Start game</button>
-            {/if}
-            <p>
-                {#each game.rack as letter}
-                    <span>{letter}</span>
-                {/each}
-            </p>
-            <Board
-                cells={[...game.board.cells, {x: 0, y: 0, letter: "A"}]}
-                requestCells={(x1, y1, x2, y2) => game.loadBoard(x1, y1, x2, y2)}
-                width={boardWidth}
-                height={boardHeight}
-                offsetX={offsetX}
-                offsetY={offsetY}
-                style="position: fixed; top: 0; left: 0; width: 100%; height: 100%;"
-            />
-            <button>test</button>
-        {/if}
+        <button onclick={async () => await game.join(name)}>Join game as {name}</button>
+    {:else}
+        <Board
+            cells={[...game.board.cells, {x: 0, y: 0, letter: "A"}]}
+            requestCells={(x1, y1, x2, y2) => game.loadBoard(x1, y1, x2, y2)}
+            width={boardWidth}
+            height={boardHeight}
+            offsetX={offsetX}
+            offsetY={offsetY}
+            style="position: fixed; top: 0; left: 0; width: 100%; height: 100%;"
+        />
     {/if}
-</main>
+{/if}
