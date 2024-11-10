@@ -2,7 +2,7 @@
 FROM golang:alpine AS go-builder
 WORKDIR /app
 COPY ./ ./
-RUN go build -o /bin/server ./cmd/http-server
+RUN go build -o /bin/server ./cmd/server
 
 FROM node:alpine AS node-builder
 WORKDIR /site
