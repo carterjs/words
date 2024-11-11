@@ -155,34 +155,6 @@ func constructPlayerResponse(player *words.Player) playerResponse {
 	}
 }
 
-// TODO: buffer border
-func constructBoardResponse(board *words.Board, minX int, minY int, maxX int, maxY int) []cellResponse {
-	var cells []cellResponse
-
-	for y := minY; y <= maxY; y++ {
-		for x := minX; x <= maxX; x++ {
-			cell := cellResponse{
-				X: x,
-				Y: y,
-			}
-
-			if letter, hasLetter := board.GetLetter(words.NewPoint(x, y)); hasLetter {
-				cell.Letter = string(letter)
-			}
-
-			if modifier, hasModifier := board.GetModifier(words.NewPoint(x, y)); hasModifier {
-				cell.Modifier = string(modifier)
-			}
-
-			if cell.Letter != "" || cell.Modifier != "" {
-				cells = append(cells, cell)
-			}
-		}
-	}
-
-	return cells
-}
-
 func (server *Server) handleGetGameByID() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := r.PathValue("gameId")
