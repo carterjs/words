@@ -1,80 +1,121 @@
 package words
 
-type (
-	Word struct {
-		Start     Point
-		Direction Direction
-		Letters   []rune
-		Blanks    map[Point]struct{}
-	}
-)
+// Word is a run of letters laid on the board in a single direction.
+type Word struct {
+	start     Point
+	direction Direction
+	letters   []rune
+	blanks    map[Point]struct{}
+}
 
-var BlankLetter = '_'
+// BlankLetter is the rune representing a blank tile in racks and pools.
+const BlankLetter = '_'
 
-func NewWord(start Point, direction Direction, value string) Word {
+// NewWord returns a word starting at the given point and running in the
+// given direction.
+func NewWord(start Point, direction Direction, letters string) Word {
 	return Word{
-		Start:     start,
-		Direction: direction,
-		Letters:   []rune(value),
+		start:     start,
+		direction: direction,
+		letters:   []rune(letters),
 	}
 }
 
+// Start returns the point of the word's first letter.
+func (word Word) Start() Point {
+	return word.start
+}
+
+// Direction returns the direction the word runs in.
+func (word Word) Direction() Direction {
+	return word.direction
+}
+
+// Letters returns the word's letters in order.
+func (word Word) Letters() []rune {
+	letters := make([]rune, len(word.letters))
+	copy(letters, word.letters)
+	return letters
+}
+
+// Length returns the number of letters in the word.
+func (word Word) Length() int {
+	return len(word.letters)
+}
+
+// Blanks returns the points of the word occupied by blank tiles.
+func (word Word) Blanks() []Point {
+	points := make([]Point, 0, len(word.blanks))
+	for position := range word.Length() {
+		point, _, _ := word.Index(position)
+		if _, isBlank := word.blanks[point]; isBlank {
+			points = append(points, point)
+		}
+	}
+	return points
+}
+
+// Blank reports whether the given point of the word holds a blank tile.
+func (word Word) Blank(point Point) bool {
+	_, isBlank := word.blanks[point]
+	return isBlank
+}
+
+// WithBlanks returns a copy of the word with the given points marked as
+// blank tiles.
 func (word Word) WithBlanks(points ...Point) Word {
-	if word.Blanks == nil {
-		word.Blanks = make(map[Point]struct{})
+	blanks := make(map[Point]struct{}, len(word.blanks)+len(points))
+	for point := range word.blanks {
+		blanks[point] = struct{}{}
 	}
-
 	for _, point := range points {
-		word.Blanks[point] = struct{}{}
+		blanks[point] = struct{}{}
 	}
 
+	word.blanks = blanks
 	return word
 }
 
-func (word Word) Index(i int) (Point, rune, bool) {
-	point := word.Start.Offset(word.Direction.Vector(i))
+// Index returns the point and letter at the given position, and whether the
+// position is within the word.
+func (word Word) Index(position int) (Point, rune, bool) {
+	point := word.start.Offset(word.direction.Vector(position))
 
-	if i < 0 || i >= len(word.Letters) {
+	if position < 0 || position >= len(word.letters) {
 		return point, 0, false
 	}
 
-	return point, word.Letters[i], true
+	return point, word.letters[position], true
 }
 
-func (word Word) Get(point Point) (rune, bool) {
-	x, y := point.X(), point.Y()
-	dx, dy := word.Direction.Vector(1)
-
-	if x < word.Start.X() || y < word.Start.Y() {
-		return 0, false
-	}
-
-	if x >= word.Start.X() && x < word.Start.X()+dx*len(word.Letters) && y == word.Start.Y() {
-		return word.Letters[x-word.Start.X()], true
-	}
-
-	if y >= word.Start.Y() && y < word.Start.Y()+dy*len(word.Letters) && x == word.Start.X() {
-		return word.Letters[y-word.Start.Y()], true
-	}
-
-	return 0, false
-
-}
-
-func (word Word) String() string {
-	var s string
-	for i, letter := range word.Letters {
-		p, _, _ := word.Index(i)
-		if _, ok := word.Blanks[p]; ok {
-			s += string(BlankLetter)
-		} else {
-			s += string(letter)
+// At returns the letter at the given point and whether the word covers it.
+func (word Word) At(point Point) (rune, bool) {
+	for position := range word.letters {
+		wordPoint, letter, _ := word.Index(position)
+		if wordPoint == point {
+			return letter, true
 		}
 	}
 
-	if len(word.Blanks) > 0 {
-		s += " (" + string(word.Letters) + ")"
+	return 0, false
+}
+
+// String renders the word's letters, masking blanks and appending the
+// underlying letters when any blank is present.
+func (word Word) String() string {
+	var rendered string
+	for position, letter := range word.letters {
+		point, _, _ := word.Index(position)
+		if _, isBlank := word.blanks[point]; isBlank {
+			rendered += string(BlankLetter)
+		} else {
+			rendered += string(letter)
+		}
 	}
 
-	return s
+	if len(word.blanks) > 0 {
+		rendered += " (" + string(word.letters) + ")"
+	}
+
+	return rendered
 }

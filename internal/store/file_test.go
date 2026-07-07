@@ -1,55 +1,68 @@
 package store_test
 
 import (
-	"context"
+	"testing"
+
 	"github.com/carterjs/words/internal/store"
 	"github.com/carterjs/words/internal/words"
 	"github.com/stretchr/testify/assert"
-	"testing"
+	"github.com/stretchr/testify/require"
 )
 
-func TestFS(t *testing.T) {
+func TestFS_GameByID(t *testing.T) {
 	t.Parallel()
 
-	t.Run("successful store and retrieve", func(t *testing.T) {
-		t.Parallel()
+	tests := []struct {
+		name    string
+		save    bool
+		wantErr error
+	}{
+		{name: "roundtrips a saved game", save: true},
+		{name: "reports a missing game", wantErr: words.ErrGameNotFound},
+	}
 
-		fs := store.NewFS(t.TempDir())
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 
-		config := words.Presets[0].Config
-		game := &words.Game{
-			Started:   false,
-			ID:        "gameId",
-			Round:     1,
-			Config:    config,
-			Pool:      []rune{'A', 'B', 'C'},
-			PoolIndex: 0,
-			Players: []words.Player{
-				{
-					ID:     "playerId",
-					GameID: "gameId",
-					Name:   "playerName",
-				},
-			},
-			Turn:  0,
-			Board: words.NewBoard("gameId", config),
-		}
+			fileStore := store.NewFS(t.TempDir())
 
-		err := fs.SaveGame(context.Background(), game)
-		assert.NoError(t, err)
+			game := newSavableGame(t)
+			if test.save {
+				require.NoError(t, fileStore.SaveGame(t.Context(), game))
+			}
 
-		g, err := fs.GetGameByID(context.Background(), game.ID)
-		assert.NoError(t, err)
-		assert.Equal(t, game, g)
+			loaded, err := fileStore.GameByID(t.Context(), game.ID())
+
+			if test.wantErr != nil {
+				assert.ErrorIs(t, err, test.wantErr)
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Equal(t, game.State(), loaded.State())
+		})
+	}
+}
+
+// newSavableGame builds a started game with a word on the board so the
+// roundtrip covers players, racks, and board replay.
+func newSavableGame(t *testing.T) *words.Game {
+	t.Helper()
+
+	game := words.NewGame(words.Config{
+		LetterDistribution: map[rune]int{'A': 10},
+		LetterPoints:       map[rune]int{'A': 1},
+		RackSize:           3,
 	})
 
-	t.Run("game not found", func(t *testing.T) {
-		t.Parallel()
+	_, err := game.AddPlayer("player-0")
+	require.NoError(t, err)
+	require.NoError(t, game.Start())
 
-		fs := store.NewFS(t.TempDir())
+	word := words.NewWord(words.NewPoint(0, 0), words.DirectionHorizontal, "AA")
+	_, err = game.PlayWord(game.CurrentPlayerID(), word)
+	require.NoError(t, err)
 
-		g, err := fs.GetGameByID(context.Background(), "unknown")
-		assert.ErrorIs(t, err, nil)
-		assert.Nil(t, g)
-	})
+	return game
 }

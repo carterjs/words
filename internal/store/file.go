@@ -1,87 +1,93 @@
+// Package store persists games to the local filesystem as gzipped JSON
+// snapshots, satisfying the words service's Store contract.
 package store
 
 import (
 	"compress/gzip"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"github.com/carterjs/words/internal/words"
 	"os"
 	"path/filepath"
+
+	"github.com/carterjs/words/internal/words"
 )
 
+// directoryPermissions is the mode for the games directory.
+const directoryPermissions = 0o755
+
+// FS stores each game as a gzipped JSON snapshot in a directory.
 type FS struct {
-	dir string
+	directory string
 }
 
-func NewFS(dir string) *FS {
+// NewFS returns a store writing games to the given directory.
+func NewFS(directory string) *FS {
 	return &FS{
-		dir: dir,
+		directory: directory,
 	}
 }
 
-func (fs *FS) SaveGame(ctx context.Context, game *words.Game) (err error) {
-	file := fs.file(game.ID)
-	err = os.MkdirAll(fs.dir, os.ModePerm)
-	if err != nil {
-		return err
+// SaveGame writes the game's snapshot to disk, replacing any previous one.
+func (fileStore *FS) SaveGame(ctx context.Context, game *words.Game) error {
+	if err := os.MkdirAll(fileStore.directory, directoryPermissions); err != nil {
+		return fmt.Errorf("creating games directory: %w", err)
 	}
 
-	// open file for writing
-	f, err := os.Create(file)
+	file, err := os.Create(fileStore.gameFile(game.ID()))
 	if err != nil {
-		return err
+		return fmt.Errorf("creating game file: %w", err)
 	}
-	defer func() {
-		err = errors.Join(err, f.Close())
-	}()
+	defer file.Close()
 
-	compressor := gzip.NewWriter(f)
-	defer func() {
-		err = errors.Join(err, compressor.Close())
-	}()
-
-	err = json.NewEncoder(compressor).Encode(game)
-	if err != nil {
-		return err
+	compressor := gzip.NewWriter(file)
+	if err := json.NewEncoder(compressor).Encode(game.State()); err != nil {
+		return fmt.Errorf("encoding game: %w", err)
 	}
 
-	return
+	if err := compressor.Close(); err != nil {
+		return fmt.Errorf("flushing game: %w", err)
+	}
+
+	if err := file.Close(); err != nil {
+		return fmt.Errorf("closing game file: %w", err)
+	}
+
+	return nil
 }
 
-func (fs *FS) file(id string) string {
-	return filepath.Join(fs.dir, id+".json.gz")
-}
-
-func (fs *FS) GetGameByID(ctx context.Context, id string) (game *words.Game, err error) {
-	file := fs.file(id)
-
-	// stream read file
-	f, err := os.Open(file)
+// GameByID reads a game's snapshot from disk and rebuilds it. A missing file
+// is reported as words.ErrGameNotFound.
+func (fileStore *FS) GameByID(ctx context.Context, gameID string) (*words.Game, error) {
+	file, err := os.Open(fileStore.gameFile(gameID))
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, nil
+			return nil, words.ErrGameNotFound
 		}
-		return nil, err
-	}
-	defer func() {
-		err = errors.Join(err, f.Close())
-	}()
 
-	decompressor, err := gzip.NewReader(f)
+		return nil, fmt.Errorf("opening game file: %w", err)
+	}
+	defer file.Close()
+
+	decompressor, err := gzip.NewReader(file)
 	if err != nil {
-		return nil, fmt.Errorf("error creating decompressor: %w", err)
+		return nil, fmt.Errorf("decompressing game: %w", err)
 	}
-	defer func() {
-		err = errors.Join(err, decompressor.Close())
-	}()
+	defer decompressor.Close()
 
-	game = &words.Game{}
-	err = json.NewDecoder(decompressor).Decode(game)
+	var state words.GameState
+	if err := json.NewDecoder(decompressor).Decode(&state); err != nil {
+		return nil, fmt.Errorf("decoding game: %w", err)
+	}
+
+	game, err := words.NewGameFromState(state)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("rebuilding game: %w", err)
 	}
 
-	return
+	return game, nil
+}
+
+func (fileStore *FS) gameFile(gameID string) string {
+	return filepath.Join(fileStore.directory, gameID+".json.gz")
 }

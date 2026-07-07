@@ -1,3 +1,5 @@
+// Package pattern describes repeating geometric placements of values on an
+// unbounded grid, used to lay out board modifiers without enumerating cells.
 package pattern
 
 import (
@@ -5,14 +7,15 @@ import (
 )
 
 type (
-	Pattern[T any] struct {
+	// Rule pairs a value with the geometric shapes that place it on the grid.
+	Rule[T any] struct {
 		Value         T               `json:"value"`
 		BothDiagonals []BothDiagonals `json:"bothDiagonals"`
 		Grids         []Grid          `json:"grids"`
-		// TODO: remove explicit since it's not a pattern
-		Explicit []Explicit `json:"explicit"`
 	}
 
+	// BothDiagonals places values along the two diagonals crossing at a
+	// center point, in a repeating series of matched and skipped cells.
 	BothDiagonals struct {
 		X          int `json:"x"`
 		Y          int `json:"y"`
@@ -21,24 +24,25 @@ type (
 		MatchCount int `json:"matchCount"`
 	}
 
+	// Grid places values at regular column and row intervals across the
+	// whole plane, offset from a center point.
 	Grid struct {
 		X      int `json:"x"`
 		Y      int `json:"y"`
 		Width  int `json:"width"`
 		Height int `json:"height"`
 	}
-
-	Explicit struct {
-		X int `json:"x"`
-		Y int `json:"y"`
-	}
 )
 
-type Group[T any] []Pattern[T]
+// Group is an ordered collection of rules; the first matching rule wins.
+type Group[T any] []Rule[T]
 
-func (group Group[T]) Get(x, y int) (T, bool) {
-	for _, pattern := range group {
-		if value, ok := pattern.Get(x, y); ok {
+// Get returns the value placed at the given coordinates and whether any rule
+// in the group places one there. The origin is never matched: it is the
+// board's center cell.
+func (group Group[T]) Get(column, row int) (T, bool) {
+	for _, rule := range group {
+		if value, matched := ruleValueAt(rule, column, row); matched {
 			return value, true
 		}
 	}
@@ -46,57 +50,51 @@ func (group Group[T]) Get(x, y int) (T, bool) {
 	return *new(T), false
 }
 
-func (pattern Pattern[T]) Get(x, y int) (T, bool) {
-	if x == 0 && y == 0 {
-		return pattern.Value, false
+func ruleValueAt[T any](rule Rule[T], column, row int) (T, bool) {
+	if column == 0 && row == 0 {
+		return *new(T), false
 	}
 
-	for _, e := range pattern.Explicit {
-		if e.X == x && e.Y == y {
-			return pattern.Value, true
+	for _, diagonals := range rule.BothDiagonals {
+		if matchDiagonals(diagonals, column, row) {
+			return rule.Value, true
 		}
 	}
 
-	for _, d := range pattern.BothDiagonals {
-		if d.match(x, y) {
-			return pattern.Value, true
-		}
-	}
-
-	for _, g := range pattern.Grids {
-		if g.match(x, y) {
-			return pattern.Value, true
+	for _, grid := range rule.Grids {
+		if matchGrid(grid, column, row) {
+			return rule.Value, true
 		}
 	}
 
 	return *new(T), false
 }
 
-func (diagonals BothDiagonals) match(x, y int) bool {
-	x = x - diagonals.X
-	y = y - diagonals.Y
+func matchDiagonals(diagonals BothDiagonals, column, row int) bool {
+	offsetX := column - diagonals.X
+	offsetY := row - diagonals.Y
 
-	if x != y && -x != y {
+	if offsetX != offsetY && -offsetX != offsetY {
 		return false
 	}
-
-	d := int(math.Abs(float64(x))) + diagonals.StartAt
 
 	if diagonals.SkipCount == 0 && diagonals.MatchCount == 0 {
 		return false
 	}
 
-	series := d % (diagonals.SkipCount + diagonals.MatchCount)
+	distance := int(math.Abs(float64(offsetX))) + diagonals.StartAt
+	series := distance % (diagonals.SkipCount + diagonals.MatchCount)
+
 	return series < diagonals.MatchCount
 }
 
-func (grid Grid) match(x, y int) bool {
-	x = x - grid.X
-	y = y - grid.Y
-
+func matchGrid(grid Grid, column, row int) bool {
 	if grid.Width <= 1 || grid.Height <= 1 {
 		return false
 	}
 
-	return x%(grid.Width-1) == 0 && y%(grid.Height-1) == 0
+	offsetX := column - grid.X
+	offsetY := row - grid.Y
+
+	return offsetX%(grid.Width-1) == 0 && offsetY%(grid.Height-1) == 0
 }

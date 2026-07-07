@@ -1,144 +1,66 @@
 package words_test
 
 import (
-	"github.com/carterjs/words/internal/pattern"
+	"testing"
+
 	"github.com/carterjs/words/internal/words"
 	"github.com/stretchr/testify/assert"
-	"testing"
+	"github.com/stretchr/testify/require"
 )
 
 func TestBoard_PlaceWord(t *testing.T) {
-	tests := map[string]struct {
-		words             []words.Word
-		config            words.Config
-		newWord           words.Word
-		expectedPlacement words.PlacementResult
-		expectedError     error
+	t.Parallel()
+
+	crossed := []words.Word{horizontal(0, 0, "AB")}
+	cornered := []words.Word{horizontal(0, 0, "AB"), vertical(1, 0, "BC")}
+
+	tests := []struct {
+		name              string
+		setup             []words.Word
+		word              words.Word
+		wantErr           error
+		wantConflict      bool
+		wantPoints        int
+		wantIndirectWords int
 	}{
-		"one word": {
-			words:   nil,
-			newWord: words.NewWord(words.NewPoint(0, 0), words.DirectionHorizontal, "HELLO"),
-			expectedPlacement: words.PlacementResult{
-				DirectWord: words.NewWord(words.NewPoint(0, 0), words.DirectionHorizontal, "HELLO"),
-				LettersUsed: map[words.Point]rune{
-					words.NewPoint(0, 0): 'H',
-					words.NewPoint(1, 0): 'E',
-					words.NewPoint(2, 0): 'L',
-					words.NewPoint(3, 0): 'L',
-					words.NewPoint(4, 0): 'O',
-				},
-				Points: 5,
-			},
-			config: words.Config{
-				LetterPoints: map[rune]int{
-					'H': 1,
-					'E': 1,
-					'L': 1,
-					'O': 1,
-				},
-			},
-			expectedError: nil,
-		},
-		"two word, normal overlap": {
-			words: []words.Word{
-				words.NewWord(words.NewPoint(0, 0), words.DirectionHorizontal, "HELLO"),
-			},
-			newWord: words.NewWord(words.NewPoint(0, 0), words.DirectionVertical, "HELLO"),
-			config: words.Config{
-				LetterPoints: map[rune]int{
-					'H': 1,
-					'E': 1,
-					'L': 1,
-					'O': 1,
-				},
-			},
-			expectedPlacement: words.PlacementResult{
-				DirectWord: words.NewWord(words.NewPoint(0, 0), words.DirectionVertical, "HELLO"),
-				LettersUsed: map[words.Point]rune{
-					"0,1": 'E',
-					"0,2": 'L',
-					"0,3": 'L',
-					"0,4": 'O',
-				},
-				Points: 5,
-			},
-		},
-		"full overlap": {
-			words: []words.Word{
-				words.NewWord(words.NewPoint(0, 0), words.DirectionHorizontal, "HELLO"),
-			},
-			newWord:           words.NewWord(words.NewPoint(0, 0), words.DirectionHorizontal, "HELLO"),
-			expectedPlacement: words.PlacementResult{},
-			expectedError:     words.ErrUnchanged,
-		},
-		"doubled word": {
-			words: []words.Word{
-				words.NewWord(words.NewPoint(0, 0), words.DirectionHorizontal, "HELLO"),
-			},
-			config: words.Config{
-				LetterPoints: map[rune]int{
-					'H': 1,
-					'E': 1,
-					'L': 1,
-					'O': 1,
-				},
-				Modifiers: pattern.Group[words.Modifier]{
-					{
-						Value: words.ModifierDoubleWord,
-						Explicit: []pattern.Explicit{
-							{
-								X: 0,
-								Y: 1,
-							},
-						},
-					},
-				},
-			},
-			newWord: words.NewWord(words.NewPoint(0, 0), words.DirectionVertical, "HELLO"),
-			expectedPlacement: words.PlacementResult{
-				LettersUsed: map[words.Point]rune{
-					words.NewPoint(0, 1): 'E',
-					words.NewPoint(0, 2): 'L',
-					words.NewPoint(0, 3): 'L',
-					words.NewPoint(0, 4): 'O',
-				},
-				DirectWord: words.NewWord(words.NewPoint(0, 0), words.DirectionVertical, "HELLO"),
-				Modifiers: map[int]words.Modifier{
-					1: words.ModifierDoubleWord,
-				},
-				Points: 10,
-			},
-		},
+		{name: "rejects first word off center", word: horizontal(3, 3, "AB"), wantErr: words.ErrFirstWordNotCentered},
+		{name: "places first word through center", word: horizontal(-1, 0, "ABC"), wantPoints: 6},
+		{name: "rejects disconnected word", setup: crossed, word: horizontal(5, 5, "AB"), wantErr: words.ErrWordNotConnected},
+		{name: "rejects conflicting overlap", setup: crossed, word: vertical(0, 0, "BC"), wantConflict: true},
+		{name: "rejects placement adding no letters", setup: crossed, word: horizontal(0, 0, "AB"), wantErr: words.ErrUnchanged},
+		{name: "rejects word running into an adjacent letter", setup: cornered, word: horizontal(-1, 1, "CC"), wantErr: words.ErrIncomplete},
+		{name: "scores indirect words above the new word", setup: crossed, word: horizontal(0, 1, "BB"), wantPoints: 11, wantIndirectWords: 2},
+		// regression: existing letters after the new letter used to loop forever
+		{name: "scores indirect word extending right of the new letter", setup: crossed, word: vertical(-1, 0, "CC"), wantPoints: 12, wantIndirectWords: 1},
 	}
 
-	for name, test := range tests {
-		t.Run(name, func(t *testing.T) {
-			testBoard := words.NewBoard("blah", test.config)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 
-			for _, word := range test.words {
-				_, err := testBoard.PlaceWord(word)
-				assert.NoError(t, err)
+			// scores A=1, B=2, C=3 with no modifiers
+			board := words.NewBoard(words.Config{LetterPoints: map[rune]int{'A': 1, 'B': 2, 'C': 3}})
+			for _, word := range test.setup {
+				_, err := board.PlaceWord(word)
+				require.NoError(t, err)
 			}
 
-			placement, err := testBoard.PlaceWord(test.newWord)
-			assert.ErrorIs(t, err, test.expectedError)
-			assert.Equal(t, test.expectedPlacement, placement)
+			result, err := board.PlaceWord(test.word)
+
+			if test.wantConflict {
+				var conflict words.WordConflictError
+				assert.ErrorAs(t, err, &conflict)
+				return
+			}
+
+			if test.wantErr != nil {
+				assert.ErrorIs(t, err, test.wantErr)
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Equal(t, test.wantPoints, result.Points)
+			assert.Len(t, result.IndirectWords, test.wantIndirectWords)
 		})
 	}
-}
-
-type MockModifierGetter struct {
-	GetFunc func(x, y int) (words.Modifier, bool)
-}
-
-func newEmptyModifierGetter() MockModifierGetter {
-	return MockModifierGetter{
-		GetFunc: func(x, y int) (words.Modifier, bool) {
-			return "", false
-		},
-	}
-}
-
-func (m MockModifierGetter) Get(x, y int) (words.Modifier, bool) {
-	return m.GetFunc(x, y)
 }
