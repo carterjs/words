@@ -1,5 +1,9 @@
 package words
 
+// PlacementResult describes the outcome of placing a word: the letters the
+// player must spend, the word as placed (including blank substitutions), any
+// perpendicular words completed by the placement, the modifiers hit, and the
+// total points scored.
 type PlacementResult struct {
 	LettersUsed   map[Point]rune
 	DirectWord    Word
@@ -8,43 +12,37 @@ type PlacementResult struct {
 	Points        int
 }
 
-func (placementResult PlacementResult) withComputedPoints(letterPoints map[rune]int) PlacementResult {
-	score := scoreWord(placementResult.DirectWord, letterPoints, placementResult.Modifiers)
-	for _, w := range placementResult.IndirectWords {
-		wordScore := scoreWord(w, letterPoints, nil)
-		score += wordScore
+func placementWithPoints(result PlacementResult, letterPoints map[rune]int) PlacementResult {
+	score := scoreWord(result.DirectWord, letterPoints, result.Modifiers)
+	for _, indirectWord := range result.IndirectWords {
+		score += scoreWord(indirectWord, letterPoints, nil)
 	}
 
-	placementResult.Points = score
+	result.Points = score
 
-	return placementResult
+	return result
 }
 
-func scoreWord(w Word, letterPoints map[rune]int, modifiers map[int]Modifier) int {
+func scoreWord(word Word, letterPoints map[rune]int, modifiers map[int]Modifier) int {
 	var score int
 
-	for i, letter := range w.Letters {
-		point, _, _ := w.Index(i)
-		if _, isBlank := w.Blanks[point]; isBlank {
+	for position, letter := range word.letters {
+		point, _, _ := word.Index(position)
+		if word.Blank(point) {
 			continue
 		}
 
 		letterScore := letterPoints[letter]
 
-		if modifier, hasModifier := modifiers[i]; hasModifier {
+		if modifier, hasModifier := modifiers[position]; hasModifier {
 			letterScore = modifier.ModifyLetterScore(letterScore)
 		}
 
 		score += letterScore
 	}
 
-	var wordModifiers []string
 	for _, modifier := range modifiers {
-		before := score
 		score = modifier.ModifyWordScore(score)
-		if before != score {
-			wordModifiers = append(wordModifiers, string(modifier))
-		}
 	}
 
 	return score

@@ -2,121 +2,103 @@ package words
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 )
 
-type (
-	Board struct {
-		GameID                 string
-		Grid                   map[Point]rune
-		Blanks                 map[Point]struct{}
-		Words                  []Word
-		MinX, MinY, MaxX, MaxY int
-		Config                 Config
+// Board holds the letters placed so far on the unbounded grid.
+type Board struct {
+	grid   map[Point]rune
+	blanks map[Point]struct{}
+	words  []Word
+	bounds Bounds
+	config Config
+}
+
+// Bounds is the smallest rectangle containing every placed letter, expressed
+// as an inclusive minimum and exclusive maximum on each axis.
+type Bounds struct {
+	MinX int `json:"minX"`
+	MinY int `json:"minY"`
+	MaxX int `json:"maxX"`
+	MaxY int `json:"maxY"`
+}
+
+// NewBoard returns an empty board using the given configuration's modifiers.
+func NewBoard(config Config) *Board {
+	return &Board{
+		grid:   make(map[Point]rune),
+		blanks: make(map[Point]struct{}),
+		config: config,
+	}
+}
+
+// Letter returns the letter at the given point and whether one is placed there.
+func (board *Board) Letter(point Point) (rune, bool) {
+	letter, exists := board.grid[point]
+	return letter, exists
+}
+
+// Modifier returns the modifier at the given point and whether one exists there.
+func (board *Board) Modifier(point Point) (Modifier, bool) {
+	return board.config.Modifiers.Get(point.Column(), point.Row())
+}
+
+// Bounds returns the smallest rectangle containing every placed letter.
+func (board *Board) Bounds() Bounds {
+	return board.bounds
+}
+
+// Words returns the words placed on the board in play order.
+func (board *Board) Words() []Word {
+	placed := make([]Word, len(board.words))
+	copy(placed, board.words)
+	return placed
+}
+
+// PlaceWord validates the word against the board and places it, returning
+// the letters used, indirect words formed, and points scored.
+func (board *Board) PlaceWord(word Word) (PlacementResult, error) {
+	result, err := board.tryWordPlacement(word)
+	if err != nil {
+		return PlacementResult{}, fmt.Errorf("checking placement: %w", err)
 	}
 
-	Point string
-)
+	// place the fully-resolved word so blank markings survive
+	word = result.DirectWord
 
-func NewPoint(x, y int) Point {
-	return Point(fmt.Sprint(x, ",", y))
-}
-
-func (p Point) X() int {
-	s, _, _ := strings.Cut(string(p), ",")
-	x, _ := strconv.Atoi(s)
-	return x
-}
-
-func (p Point) Y() int {
-	_, s, _ := strings.Cut(string(p), ",")
-	y, _ := strconv.Atoi(s)
-	return y
-}
-
-func (p Point) Offset(dx, dy int) Point {
-	return NewPoint(p.X()+dx, p.Y()+dy)
-}
-
-func NewBoard(gameID string, config Config) *Board {
-	board := &Board{
-		GameID: gameID,
-		Grid:   make(map[Point]rune),
-		Blanks: make(map[Point]struct{}),
-		Config: config,
+	for position := range word.Length() {
+		point, letter, _ := word.Index(position)
+		board.grid[point] = letter
+		if word.Blank(point) {
+			board.blanks[point] = struct{}{}
+		}
 	}
 
-	return board
+	board.expandBounds(word)
+	board.words = append(board.words, word)
+
+	return result, nil
 }
 
-func (board *Board) tryWordPlacement(w Word) (PlacementResult, error) {
-	needsConnection := true
-	if len(board.Grid) == 0 {
-		// if word does not intersect center
-		_, intersectsCenter := w.Get(NewPoint(0, 0))
-		if !intersectsCenter {
+func (board *Board) tryWordPlacement(word Word) (PlacementResult, error) {
+	needsConnection := len(board.grid) > 0
+	if !needsConnection {
+		if _, intersectsCenter := word.At(NewPoint(0, 0)); !intersectsCenter {
 			return PlacementResult{}, ErrFirstWordNotCentered
 		}
-
-		needsConnection = false
 	}
 
 	result := PlacementResult{
 		LettersUsed: make(map[Point]rune),
-		DirectWord:  w,
+		DirectWord:  word,
 	}
 
-	for i := range w.Letters {
-		point, letter, _ := w.Index(i)
-
-		// see if there's already a letter there
-		if currentLetter, isSet := board.GetLetter(point); isSet {
-			if currentLetter != letter {
-				return PlacementResult{}, WordConflictError{
-					X:    point.X(),
-					Y:    point.Y(),
-					Want: letter,
-					Got:  currentLetter,
-				}
-			}
-
-			// assert that the word has a blank
-			// this should be a no-op if the word is already marked as blank but is necessary for scoring
-			if _, isBlank := board.Blanks[point]; isBlank {
-				result.DirectWord = result.DirectWord.WithBlanks(point)
-			}
-
-			// successful overlap with an existing word
-			// can't have indirect words if it's already overlapping
-			needsConnection = false
-			continue
-		}
-
-		// check for modifier
-		if modifier, hasModifier := board.getModifier(point); hasModifier {
-			if result.Modifiers == nil {
-				result.Modifiers = make(map[int]Modifier)
-			}
-
-			result.Modifiers[i] = modifier
-		}
-
-		// track used letter (or blank)
-		if _, isBlank := w.Blanks[point]; isBlank {
-			result.LettersUsed[point] = BlankLetter
-		} else {
-			result.LettersUsed[point] = letter
-		}
-
-		// look for indirect words formed by this placement
-		if indirectWord, hasIndirectWord := board.wordFormedByNewLetter(letter, point, w.Direction.Other()); hasIndirectWord {
-			result.IndirectWords = append(result.IndirectWords, indirectWord)
-			needsConnection = false
-		}
+	connected, err := board.applyWordLetters(word, &result)
+	if err != nil {
+		return PlacementResult{}, fmt.Errorf("checking letters: %w", err)
 	}
 
-	if needsConnection {
+	if needsConnection && !connected {
 		return PlacementResult{}, ErrWordNotConnected
 	}
 
@@ -124,214 +106,238 @@ func (board *Board) tryWordPlacement(w Word) (PlacementResult, error) {
 		return PlacementResult{}, ErrUnchanged
 	}
 
-	// assert no letters before or after
-	before := w.Start.Offset(w.Direction.Vector(-1))
-	after := w.Start.Offset(w.Direction.Vector(len(w.Letters)))
-
-	// before word
-	if _, isSet := board.GetLetter(before); isSet {
-		return PlacementResult{}, ErrIncomplete
+	if err := board.assertWordBoundaries(word); err != nil {
+		return PlacementResult{}, fmt.Errorf("checking boundaries: %w", err)
 	}
 
-	if _, isSet := board.GetLetter(after); isSet {
-		return PlacementResult{}, ErrIncomplete
-	}
-
-	return result.withComputedPoints(board.Config.LetterPoints), nil
+	return placementWithPoints(result, board.config.LetterPoints), nil
 }
 
-func (board *Board) getModifier(point Point) (Modifier, bool) {
-	return board.Config.Modifiers.Get(point.X(), point.Y())
+// applyWordLetters walks the word's cells, recording spent letters, modifiers
+// hit, and indirect words into result. It reports whether the word touches
+// any letter already on the board.
+func (board *Board) applyWordLetters(word Word, result *PlacementResult) (bool, error) {
+	var connected bool
+
+	for position := range word.Length() {
+		point, letter, _ := word.Index(position)
+
+		if currentLetter, occupied := board.Letter(point); occupied {
+			if currentLetter != letter {
+				return false, WordConflictError{
+					column: point.Column(),
+					row:    point.Row(),
+					want:   letter,
+					got:    currentLetter,
+				}
+			}
+
+			// overlapping a blank makes this word's letter a blank for scoring
+			if _, isBlank := board.blanks[point]; isBlank {
+				result.DirectWord = result.DirectWord.WithBlanks(point)
+			}
+
+			connected = true
+			continue
+		}
+
+		if modifier, hasModifier := board.Modifier(point); hasModifier {
+			if result.Modifiers == nil {
+				result.Modifiers = make(map[int]Modifier)
+			}
+			result.Modifiers[position] = modifier
+		}
+
+		if word.Blank(point) {
+			result.LettersUsed[point] = BlankLetter
+		} else {
+			result.LettersUsed[point] = letter
+		}
+
+		if indirectWord, hasIndirectWord := board.wordFormedByNewLetter(letter, point, word.Direction().Other()); hasIndirectWord {
+			result.IndirectWords = append(result.IndirectWords, indirectWord)
+			connected = true
+		}
+	}
+
+	return connected, nil
 }
 
-func (board *Board) GetLetter(point Point) (rune, bool) {
-	letter, exists := board.Grid[point]
-	return letter, exists
-}
+// assertWordBoundaries rejects placements that run into letters immediately
+// before or after the word, which would silently form a longer word.
+func (board *Board) assertWordBoundaries(word Word) error {
+	deltaColumn, deltaRow := word.Direction().Vector(1)
 
-func (board *Board) GetModifier(point Point) (Modifier, bool) {
-	return board.Config.Modifiers.Get(point.X(), point.Y())
-}
-
-func (board *Board) PlaceWord(w Word) (PlacementResult, error) {
-	wordPlacement, err := board.tryWordPlacement(w)
-	if err != nil {
-		return PlacementResult{}, err
-	}
-	//board.indirectWords = append(board.indirectWords, wordPlacement.IndirectWords...)
-
-	for i := range w.Letters {
-		point, letter, _ := w.Index(i)
-		board.set(point, letter)
-	}
-	//board.directWords = append(board.directWords, w)
-
-	board.MinX = min(board.MinX, w.Start.X())
-	board.MinY = min(board.MinY, w.Start.Y())
-
-	if w.Direction == DirectionHorizontal {
-		board.MaxX = max(board.MaxX, w.Start.X()+len(w.Letters))
-		board.MaxY = max(board.MaxY, w.Start.Y()+1)
-	} else {
-		board.MaxY = max(board.MaxY, w.Start.Y()+len(w.Letters))
-		board.MaxX = max(board.MaxX, w.Start.X()+1)
+	before := word.Start().Offset(-deltaColumn, -deltaRow)
+	if _, occupied := board.Letter(before); occupied {
+		return ErrIncomplete
 	}
 
-	board.Words = append(board.Words, w)
-
-	return wordPlacement, nil
-}
-
-func (board *Board) removeLastWord() error {
-	if len(board.Words) == 0 {
-		return ErrNothingToUndo
-	}
-
-	board.MinX = 0
-	board.MinY = 0
-	board.MaxX = 0
-	board.MaxY = 0
-	board.Grid = make(map[Point]rune)
-	words := board.Words[:len(board.Words)-1]
-	board.Words = []Word{}
-
-	for _, word := range words {
-		_, _ = board.PlaceWord(word)
+	after := word.Start().Offset(word.Direction().Vector(word.Length()))
+	if _, occupied := board.Letter(after); occupied {
+		return ErrIncomplete
 	}
 
 	return nil
 }
 
-func (board *Board) set(point Point, letter rune) {
-	board.Grid[point] = letter
+func (board *Board) expandBounds(word Word) {
+	start := word.Start()
+	board.bounds.MinX = min(board.bounds.MinX, start.Column())
+	board.bounds.MinY = min(board.bounds.MinY, start.Row())
+
+	if word.Direction() == DirectionHorizontal {
+		board.bounds.MaxX = max(board.bounds.MaxX, start.Column()+word.Length())
+		board.bounds.MaxY = max(board.bounds.MaxY, start.Row()+1)
+	} else {
+		board.bounds.MaxY = max(board.bounds.MaxY, start.Row()+word.Length())
+		board.bounds.MaxX = max(board.bounds.MaxX, start.Column()+1)
+	}
 }
 
-func (board *Board) wordFormedByNewLetter(letter rune, point Point, direction Direction) (Word, bool) {
-	s := string(letter)
-	blanks := make(map[Point]struct{})
-
-	start := point
-
-	// starting as far before as possible
-	for {
-		letter, isSet := board.GetLetter(start.Offset(direction.Vector(-1)))
-		if !isSet {
-			break
-		}
-
-		s = string(letter) + s
-		start = start.Offset(direction.Vector(-1))
+// removeLastWord takes the most recently placed word off the board by
+// replaying the remaining words onto a fresh grid.
+func (board *Board) removeLastWord() error {
+	if len(board.words) == 0 {
+		return ErrUnchanged
 	}
 
-	// now go as far after as possible
+	remaining := board.words[:len(board.words)-1]
+
+	board.grid = make(map[Point]rune)
+	board.blanks = make(map[Point]struct{})
+	board.words = nil
+	board.bounds = Bounds{}
+
+	for _, word := range remaining {
+		if _, err := board.PlaceWord(word); err != nil {
+			return fmt.Errorf("replaying word %q: %w", word.String(), err)
+		}
+	}
+
+	return nil
+}
+
+// wordFormedByNewLetter finds the perpendicular word completed by placing
+// the given letter, scanning for existing letters on both sides of it.
+func (board *Board) wordFormedByNewLetter(letter rune, point Point, direction Direction) (Word, bool) {
+	start := point
+	for {
+		previous := start.Offset(direction.Vector(-1))
+		if _, occupied := board.Letter(previous); !occupied {
+			break
+		}
+		start = previous
+	}
+
 	end := point
 	for {
-		letter, isSet := board.GetLetter(end.Offset(direction.Vector(1)))
-		if !isSet {
+		next := end.Offset(direction.Vector(1))
+		if _, occupied := board.Letter(next); !occupied {
 			break
 		}
-
-		s += string(letter)
-		end := end.Offset(direction.Vector(1))
-		if _, isBlank := board.Blanks[end]; isBlank {
-			blanks[end] = struct{}{}
-		}
+		end = next
 	}
 
-	if len(s) == 1 {
+	if start == end {
 		return Word{}, false
 	}
 
-	newWord := NewWord(start, direction, s)
-
-	for point := range blanks {
-		newWord = newWord.WithBlanks(point)
-	}
-
-	return newWord, true
-}
-
-func (board *Board) String() string {
-	grid := make([][]rune, board.MaxY-board.MinY)
-	for i := range grid {
-		grid[i] = make([]rune, board.MaxX-board.MinX)
-	}
-
-	var sb strings.Builder
-	for point, letter := range board.Grid {
-		grid[point.Y()-board.MinY][point.X()-board.MinX] = letter
-	}
-
-	buffer := 1
-	width := 3
-	minX := -16
-	maxX := 16
-	minY := -16
-	maxY := 16
-
-	if board.MinX <= minX {
-		minX = board.MinX - buffer
-	}
-
-	if board.MaxX >= maxX {
-		maxX = board.MaxX - 1 + buffer
-	}
-
-	if board.MinY <= minY {
-		minY = board.MinY - buffer
-	}
-
-	if board.MaxY >= maxY {
-		maxY = board.MaxY - 1 + buffer
-	}
-
-	// heading label
-	sb.WriteString(centered(" ", width+1))
-	for x := minX; x <= maxX; x++ {
-		sb.WriteString(centered(fmt.Sprint(x), width))
-		sb.WriteRune(' ')
-	}
-	sb.WriteRune('\n')
-
-	for y := minY; y <= maxY; y++ {
-		sb.WriteString(centered(fmt.Sprint(y), width))
-		sb.WriteRune('\u2502')
-		for x := minX; x <= maxX; x++ {
-			var letter rune
-			if x >= board.MinX && x < board.MaxX && y >= board.MinY && y < board.MaxY {
-				letter = grid[y-board.MinY][x-board.MinX]
+	var letters []rune
+	var blankPoints []Point
+	for current := start; ; current = current.Offset(direction.Vector(1)) {
+		if current == point {
+			letters = append(letters, letter)
+		} else {
+			currentLetter, _ := board.Letter(current)
+			letters = append(letters, currentLetter)
+			if _, isBlank := board.blanks[current]; isBlank {
+				blankPoints = append(blankPoints, current)
 			}
-
-			if letter == 0 {
-				if modifier, hasModifier := board.Config.Modifiers.Get(x, y); hasModifier {
-					sb.WriteString(centered(string(modifier), width))
-				} else if x == 0 && y == 0 {
-					sb.WriteString(filled("\u2592", width))
-				} else {
-					sb.WriteString(filled("\u2591", width))
-				}
-			} else {
-				sb.WriteString(centered(string(letter), width))
-			}
-			sb.WriteRune('\u2502')
 		}
-		sb.WriteString(centered(fmt.Sprint(y), width))
-		sb.WriteRune('\n')
+
+		if current == end {
+			break
+		}
 	}
 
-	sb.WriteString(centered(" ", width+1))
-	for x := minX; x <= maxX; x++ {
-		sb.WriteString(centered(fmt.Sprint(x), width))
-		sb.WriteRune(' ')
+	return NewWord(start, direction, string(letters)).WithBlanks(blankPoints...), true
+}
+
+const (
+	renderCellWidth  = 3
+	renderMinExtent  = 16
+	renderEdgeBuffer = 1
+)
+
+// String renders the board as a text grid for debugging.
+func (board *Board) String() string {
+	minX, minY, maxX, maxY := board.renderExtents()
+
+	var builder strings.Builder
+
+	writeColumnHeading(&builder, minX, maxX)
+
+	for row := minY; row <= maxY; row++ {
+		builder.WriteString(centered(fmt.Sprint(row), renderCellWidth))
+		builder.WriteRune('│')
+		for column := minX; column <= maxX; column++ {
+			board.writeCell(&builder, column, row)
+			builder.WriteRune('│')
+		}
+		builder.WriteString(centered(fmt.Sprint(row), renderCellWidth))
+		builder.WriteRune('\n')
 	}
 
-	return sb.String()
+	writeColumnHeading(&builder, minX, maxX)
+
+	return builder.String()
 }
 
-func centered(s string, width int) string {
-	return fmt.Sprintf("%*s", -width, fmt.Sprintf("%*s", (width+len(s))/2, s))
+func (board *Board) renderExtents() (int, int, int, int) {
+	minX, minY := -renderMinExtent, -renderMinExtent
+	maxX, maxY := renderMinExtent, renderMinExtent
+
+	if board.bounds.MinX <= minX {
+		minX = board.bounds.MinX - renderEdgeBuffer
+	}
+	if board.bounds.MaxX >= maxX {
+		maxX = board.bounds.MaxX - 1 + renderEdgeBuffer
+	}
+	if board.bounds.MinY <= minY {
+		minY = board.bounds.MinY - renderEdgeBuffer
+	}
+	if board.bounds.MaxY >= maxY {
+		maxY = board.bounds.MaxY - 1 + renderEdgeBuffer
+	}
+
+	return minX, minY, maxX, maxY
 }
 
-func filled(s string, width int) string {
-	return strings.Repeat(s, width)
+func (board *Board) writeCell(builder *strings.Builder, column, row int) {
+	if letter, occupied := board.Letter(NewPoint(column, row)); occupied {
+		builder.WriteString(centered(string(letter), renderCellWidth))
+		return
+	}
+
+	if modifier, hasModifier := board.config.Modifiers.Get(column, row); hasModifier {
+		builder.WriteString(centered(string(modifier), renderCellWidth))
+	} else if column == 0 && row == 0 {
+		builder.WriteString(strings.Repeat("▒", renderCellWidth))
+	} else {
+		builder.WriteString(strings.Repeat("░", renderCellWidth))
+	}
+}
+
+func writeColumnHeading(builder *strings.Builder, minX, maxX int) {
+	builder.WriteString(centered(" ", renderCellWidth+1))
+	for column := minX; column <= maxX; column++ {
+		builder.WriteString(centered(fmt.Sprint(column), renderCellWidth))
+		builder.WriteRune(' ')
+	}
+	builder.WriteRune('\n')
+}
+
+func centered(text string, width int) string {
+	return fmt.Sprintf("%*s", -width, fmt.Sprintf("%*s", (width+len(text))/2, text))
 }

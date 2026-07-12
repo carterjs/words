@@ -4,158 +4,54 @@ import (
 	"testing"
 
 	"github.com/carterjs/words/internal/pattern"
-
 	"github.com/stretchr/testify/assert"
 )
 
-func TestPattern(t *testing.T) {
+func TestGroup_Get(t *testing.T) {
 	t.Parallel()
 
-	test := []struct {
-		name     string
-		pattern  pattern.Pattern[bool]
-		expected []string
-	}{
-		{
-			name: "spaced x",
-			pattern: pattern.Pattern[bool]{
-				Value: true,
-				BothDiagonals: []pattern.BothDiagonals{
-					{
-						StartAt:    0,
-						SkipCount:  1,
-						MatchCount: 1,
-					},
-				},
-			},
-			expected: []string{
-				"X_______X",
-				"_________",
-				"__X___X__",
-				"_________",
-				"____X____",
-				"_________",
-				"__X___X__",
-				"_________",
-				"X_______X",
-			},
-		},
-		{
-			name: "pattern spaced x",
-			pattern: pattern.Pattern[bool]{
-				Value: true,
-				BothDiagonals: []pattern.BothDiagonals{
-					{
-						MatchCount: 2,
-						SkipCount:  1,
-						StartAt:    0,
-					},
-				},
-			},
-			expected: []string{
-				"X_______X",
-				"_X_____X_",
-
-				"_________",
-				"___X_X___",
-				"____X____",
-				"___X_X___",
-				"_________",
-				"_X_____X_",
-				"X_______X",
-			},
-		},
-		{
-			name: "3x2 grid",
-			pattern: pattern.Pattern[bool]{
-				Value: true,
-				Grids: []pattern.Grid{
-					{
-						Width:  3,
-						Height: 2,
-					},
-				},
-			},
-			expected: []string{
-				"X_X_X",
-				"X_X_X",
-				"X_X_X",
-			},
-		},
-		{
-			name: "3x4 grid",
-			pattern: pattern.Pattern[bool]{
-				Value: true,
-				Grids: []pattern.Grid{
-					{
-						Width:  3,
-						Height: 4,
-					},
-				},
-			},
-			expected: []string{
-				"_________",
-				"X_X_X_X_X",
-				"_________",
-				"_________",
-				"X_X_X_X_X",
-				"_________",
-				"_________",
-				"X_X_X_X_X",
-				"_________",
-			},
-		},
-		{
-			name: "4x4 grid",
-			pattern: pattern.Pattern[bool]{
-				Value: true,
-				Grids: []pattern.Grid{
-					{
-						Width:  4,
-						Height: 4,
-					},
-				},
-			},
-			expected: []string{
-				"_________",
-				"_X__X__X_",
-				"_________",
-				"_________",
-				"_X__X__X_",
-				"_________",
-				"_________",
-				"_X__X__X_",
-				"_________",
-			},
-		},
+	grids := pattern.Group[string]{
+		{Value: "grid", Grids: []pattern.Grid{{Width: 5, Height: 5}}},
+	}
+	offsetGrid := pattern.Group[string]{
+		{Value: "grid", Grids: []pattern.Grid{{X: 2, Y: 2, Width: 5, Height: 5}}},
+	}
+	diagonals := pattern.Group[string]{
+		{Value: "diagonal", BothDiagonals: []pattern.BothDiagonals{{StartAt: 3, SkipCount: 2, MatchCount: 4}}},
+	}
+	layered := pattern.Group[string]{
+		{Value: "first", Grids: []pattern.Grid{{Width: 5, Height: 5}}},
+		{Value: "second", Grids: []pattern.Grid{{Width: 3, Height: 3}}},
 	}
 
-	for _, test := range test {
+	tests := []struct {
+		name      string
+		group     pattern.Group[string]
+		column    int
+		row       int
+		want      string
+		wantMatch bool
+	}{
+		{name: "matches a grid at its intervals", group: grids, column: 4, row: 4, want: "grid", wantMatch: true},
+		{name: "matches a grid across the axis", group: grids, column: -4, row: 8, want: "grid", wantMatch: true},
+		{name: "misses between grid intervals", group: grids, column: 2, row: 4},
+		{name: "never matches the center", group: grids, column: 0, row: 0},
+		{name: "matches a grid offset from center", group: offsetGrid, column: 6, row: 6, want: "grid", wantMatch: true},
+		{name: "matches a diagonal series cell", group: diagonals, column: 3, row: 3, want: "diagonal", wantMatch: true},
+		{name: "matches the anti-diagonal", group: diagonals, column: -3, row: 3, want: "diagonal", wantMatch: true},
+		{name: "misses a skipped diagonal cell", group: diagonals, column: 1, row: 1},
+		{name: "prefers the first matching rule", group: layered, column: 4, row: 4, want: "first", wantMatch: true},
+		{name: "falls through to later rules", group: layered, column: 2, row: 2, want: "second", wantMatch: true},
+	}
+
+	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			assertPattern(t, test.pattern, test.expected)
+			value, matched := test.group.Get(test.column, test.row)
+
+			assert.Equal(t, test.wantMatch, matched)
+			assert.Equal(t, test.want, value)
 		})
 	}
-}
-
-func assertPattern(t *testing.T, p pattern.Pattern[bool], expected []string) {
-	t.Helper()
-
-	height := len(expected)
-	width := len(expected[0])
-
-	results := make([]string, 0, height)
-	for y := -height / 2; y <= height/2; y++ {
-		results = append(results, "")
-		for x := -width / 2; x <= width/2; x++ {
-			if b, _ := p.Get(x, y); b {
-				results[y+height/2] += "X"
-			} else {
-				results[y+height/2] += "_"
-			}
-		}
-	}
-
-	assert.Equal(t, expected, results)
 }

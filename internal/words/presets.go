@@ -2,6 +2,7 @@ package words
 
 import "github.com/carterjs/words/internal/pattern"
 
+// Preset is a named, ready-to-play game configuration.
 type Preset struct {
 	Config
 
@@ -10,6 +11,18 @@ type Preset struct {
 	Description string
 }
 
+// PresetByID returns the preset with the given ID and whether it exists.
+func PresetByID(presetID string) (Preset, bool) {
+	for _, preset := range Presets {
+		if preset.ID == presetID {
+			return preset, true
+		}
+	}
+
+	return Preset{}, false
+}
+
+// Presets are the built-in game configurations.
 var Presets = []Preset{
 	{
 		ID:          "standard",
