@@ -154,7 +154,7 @@ export  class GameController {
         this.playerId = data.playerId || null;
         this.letterPoints = data.letterPoints;
         this.rack = data.rack || [];
-        this.players = data.players;
+        this.players = data.players || [];
 
         await this.reloadBoard();
 
@@ -169,7 +169,8 @@ export  class GameController {
             throw new Error(`Failed to fetch board for game ${this.id}`);
         }
 
-        this.board = await resp.json();
+        const { cells } = await resp.json();
+        this.board = { cells: cells || [] };
     }
 
     async loadBoard(minX: number, minY: number, maxX: number, maxY: number) {
@@ -292,7 +293,7 @@ export  class GameController {
         }
 
         const data = await resp.json();
-        this.players = data.players;
+        this.players = data.players || [];
         this.currentPlayerId = data.currentPlayerId;
         this.lettersRemaining = data.lettersRemaining;
         this.finished = data.finished;
@@ -343,7 +344,7 @@ export  class GameController {
         let { playerId, players } = await resp.json();
 
         this.playerId = playerId;
-        this.players = players;
+        this.players = players || [];
     }
 
     async start() {

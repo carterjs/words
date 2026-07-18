@@ -47,7 +47,12 @@
     let selectedCell = $state<{ x: number; y: number } | null>(null);
 
     async function handleCellTap(x: number, y: number) {
-        if (!game.started || game.finished || !game.myTurn || game.challenge) {
+        if (!game.started || game.finished || game.challenge) {
+            return;
+        }
+
+        if (!game.myTurn) {
+            game.error = `It's ${game.playerName(game.currentPlayerId)}'s turn.`;
             return;
         }
 
@@ -363,7 +368,13 @@
                 <Rack letters={game.sortedRack} letterPoints={game.letterPoints} input={game.input} />
                 {#if game.myTurn}
                     <input type="text" bind:value={game.input} placeholder="WORD" class="input" />
-                    <p class="hint">Type a word, then tap the square where it starts.</p>
+                    <p class="hint">
+                        {#if game.board.cells.some(cell => cell.letter)}
+                            Type a word, then tap the square where it starts.
+                        {:else}
+                            Type a word, then tap the center star to place it.
+                        {/if}
+                    </p>
                 {/if}
             </div>
             <div class="actions">
