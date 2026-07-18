@@ -315,7 +315,7 @@ func constructGameResponse(r *http.Request, game *words.Game) gameResponse {
 }
 
 func constructPlayerResponses(game *words.Game) []playerResponse {
-	var players []playerResponse
+	players := []playerResponse{}
 	for _, player := range game.Players() {
 		players = append(players, playerResponse{
 			ID:    player.ID(),

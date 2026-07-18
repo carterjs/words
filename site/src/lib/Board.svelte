@@ -49,16 +49,26 @@
     let maxX = $derived(Math.max(...cells.map(cell => cell.x)));
     let maxY = $derived(Math.max(...cells.map(cell => cell.y)));
 
+    let svgElement: SVGSVGElement;
+
+    // offsetX/offsetY are relative to the event target, which can be a tile
+    // or the center star rather than the svg - measure against the svg itself
+    function pointerPosition(e: PointerEvent) {
+        const rect = svgElement.getBoundingClientRect();
+        return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    }
+
     function handlePointerDown(e: PointerEvent) {
         if (disabled) return;
-        anchor = { x: e.offsetX, y: e.offsetY };
-        (e.currentTarget as SVGElement).setPointerCapture?.(e.pointerId);
+        anchor = pointerPosition(e);
+        svgElement.setPointerCapture?.(e.pointerId);
     }
 
     function handlePointerMove(e: PointerEvent) {
         if (anchor) {
-            displacementX = anchor.x - e.offsetX;
-            displacementY =  anchor.y - e.offsetY;
+            const position = pointerPosition(e);
+            displacementX = anchor.x - position.x;
+            displacementY = anchor.y - position.y;
         }
     }
 
@@ -75,8 +85,9 @@
         displacementY = 0;
 
         if (wasTap && onCellTap) {
-            const cellX = Math.floor((offsetX + e.offsetX) / scale / cellSize);
-            const cellY = Math.floor((offsetY + e.offsetY) / scale / cellSize);
+            const position = pointerPosition(e);
+            const cellX = Math.floor((offsetX + position.x) / scale / cellSize);
+            const cellY = Math.floor((offsetY + position.y) / scale / cellSize);
             onCellTap(cellX, cellY);
         }
     }
@@ -133,6 +144,10 @@
 </script>
 
 <style>
+    svg :global(*) {
+        pointer-events: none;
+    }
+
     svg {
         user-select: none;
         touch-action: none;
@@ -157,6 +172,7 @@
 </style>
 
 <svg
+        bind:this={svgElement}
         style="--cell-size: {cellSize*scale}px; --offset-x: {Math.round((-offsetX-displacementX-0.5)%cellSize*precision)/precision}px; --offset-y: {Math.round((-offsetY-displacementY-0.5)%cellSize*precision)/precision}px;{style}"
         viewBox={`${Math.round((offsetX+displacementX) / scale * precision) / precision} ${Math.round((offsetY+displacementY) / scale * precision) / precision} ${Math.round(width / scale * precision) / precision} ${Math.round(height / scale*precision)/precision}`}
         width={width}

@@ -181,7 +181,7 @@ func constructPlacementResponse(result words.PlacementResult) placementResponse 
 }
 
 func boardCells(board *words.Board, area extents) []cellResponse {
-	var cells []cellResponse
+	cells := []cellResponse{}
 
 	for row := area.minY; row <= area.maxY; row++ {
 		for column := area.minX; column <= area.maxX; column++ {
