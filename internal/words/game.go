@@ -336,6 +336,16 @@ func (game *Game) assertVoteAllowed(playerID string, vote Vote) error {
 	return nil
 }
 
+// ChallengeableMoverID returns the player whose last word is still open to a
+// challenge, if any.
+func (game *Game) ChallengeableMoverID() (string, bool) {
+	if game.finished || game.challenge != nil || game.lastWord == nil || game.lastWord.settled {
+		return "", false
+	}
+
+	return game.lastWord.playerID, true
+}
+
 // PendingChallenge returns the current tally of the open challenge and
 // whether one is pending.
 func (game *Game) PendingChallenge() (ChallengeOutcome, bool) {

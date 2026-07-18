@@ -28,18 +28,19 @@ type (
 	}
 
 	gameResponse struct {
-		ID               string             `json:"id"`
-		Started          bool               `json:"started"`
-		Finished         bool               `json:"finished"`
-		Round            int                `json:"round"`
-		CurrentPlayerID  string             `json:"currentPlayerId"`
-		LettersRemaining int                `json:"lettersRemaining"`
-		Players          []playerResponse   `json:"players"`
-		LetterPoints     map[string]int     `json:"letterPoints"`
-		WinnerIDs        []string           `json:"winnerIds,omitempty"`
-		Challenge        *challengeResponse `json:"challenge,omitempty"`
-		PlayerID         string             `json:"playerId"`
-		Rack             []string           `json:"rack,omitempty"`
+		ID                   string             `json:"id"`
+		Started              bool               `json:"started"`
+		Finished             bool               `json:"finished"`
+		Round                int                `json:"round"`
+		CurrentPlayerID      string             `json:"currentPlayerId"`
+		LettersRemaining     int                `json:"lettersRemaining"`
+		Players              []playerResponse   `json:"players"`
+		LetterPoints         map[string]int     `json:"letterPoints"`
+		WinnerIDs            []string           `json:"winnerIds,omitempty"`
+		Challenge            *challengeResponse `json:"challenge,omitempty"`
+		ChallengeableMoverID string             `json:"challengeableMoverId,omitempty"`
+		PlayerID             string             `json:"playerId"`
+		Rack                 []string           `json:"rack,omitempty"`
 	}
 
 	turnResponse struct {
@@ -297,6 +298,10 @@ func constructGameResponse(r *http.Request, game *words.Game) gameResponse {
 	if outcome, pending := game.PendingChallenge(); pending {
 		challenge := constructChallengeResponse(outcome)
 		response.Challenge = &challenge
+	}
+
+	if moverID, challengeable := game.ChallengeableMoverID(); challengeable {
+		response.ChallengeableMoverID = moverID
 	}
 
 	if playerID, identified := playerIDFromRequest(r); identified {
