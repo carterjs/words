@@ -11,6 +11,30 @@ export type Cell = {
     letter?: string;
 }
 
+export type Player = {
+    id: string;
+    name: string;
+    score: number;
+}
+
+export type Placement = {
+    x: number;
+    y: number;
+    direction: "HORIZONTAL" | "VERTICAL";
+    word: string;
+    points: number;
+    indirectWords: { x: number; y: number; direction: string; word: string }[] | null;
+}
+
+export type Challenge = {
+    challengerId: string;
+    moverId: string;
+    votesInvalid: number;
+    votesValid: number;
+    votesNeeded: number;
+    eligibleVoters: number;
+}
+
 export  class GameController {
     id = $state<string>("");
 
@@ -58,13 +82,44 @@ export  class GameController {
 
     started = $state<boolean>(false);
 
-    players = $state<{ id: string, name: string }[]>([]);
+    finished = $state<boolean>(false);
 
-    messages = $state<string[]>([]);
+    winnerIds = $state<string[]>([]);
+
+    currentPlayerId = $state<string>("");
+
+    lettersRemaining = $state<number>(0);
+
+    players = $state<Player[]>([]);
+
+    challenge = $state<Challenge | null>(null);
+
+    // the id of the player who played the still-challengeable last word
+    challengeableMoverId = $state<string | null>(null);
+
+    myVote = $state<boolean>(false);
+
+    placements = $state<Placement[]>([]);
+
+    selectedPlacement = $state<number>(0);
+
+    error = $state<string>("");
 
     board = $state<board>({ cells: [] });
 
     letterPoints = $state<{ [letter: string]: number }>({})
+
+    get myTurn() {
+        return this.playerId !== null && this.playerId === this.currentPlayerId;
+    }
+
+    getPlayerById(id: string) {
+        return this.players.find(p => p.id === id);
+    }
+
+    playerName(id: string) {
+        return this.getPlayerById(id)?.name ?? "someone";
+    }
 
     async loadInitialData() {
         let resp = await fetch(`${PUBLIC_API_URL}/api/v1/games/${this.id}`, {
@@ -77,19 +132,37 @@ export  class GameController {
         let data: {
             id: string;
             started: boolean;
-            players: { id: string, name: string }[];
+            finished: boolean;
+            currentPlayerId: string;
+            lettersRemaining: number;
+            winnerIds?: string[];
+            challenge?: Challenge;
+            challengeableMoverId?: string;
+            players: Player[];
             playerId: string | null;
             rack?: string[];
             letterPoints: { [letter: string]: number };
         } = await resp.json();
 
         this.started = data.started;
-        this.playerId = data.playerId;
+        this.finished = data.finished;
+        this.currentPlayerId = data.currentPlayerId;
+        this.lettersRemaining = data.lettersRemaining;
+        this.winnerIds = data.winnerIds || [];
+        this.challenge = data.challenge || null;
+        this.challengeableMoverId = data.challengeableMoverId || null;
+        this.playerId = data.playerId || null;
         this.letterPoints = data.letterPoints;
         this.rack = data.rack || [];
         this.players = data.players;
 
-        resp = await fetch(`${PUBLIC_API_URL}/api/v1/games/${this.id}/board`, {
+        await this.reloadBoard();
+
+        this.loaded = true;
+    }
+
+    async reloadBoard() {
+        let resp = await fetch(`${PUBLIC_API_URL}/api/v1/games/${this.id}/board`, {
             credentials: "include"
         });
         if (!resp.ok) {
@@ -97,8 +170,6 @@ export  class GameController {
         }
 
         this.board = await resp.json();
-
-        this.loaded = true;
     }
 
     async loadBoard(minX: number, minY: number, maxX: number, maxY: number) {
@@ -111,7 +182,7 @@ export  class GameController {
 
         let { cells } = await resp.json();
 
-        this.board.cells = this.board.cells.concat(cells);
+        this.board.cells = this.board.cells.concat(cells || []);
     }
 
     streamUpdates() {
@@ -119,18 +190,134 @@ export  class GameController {
         let events = new EventSource(`${PUBLIC_API_URL}/api/v1/games/${this.id}/events`, {
             withCredentials: true
         });
-        events.addEventListener("MESSAGE", (e) => {
-            const { playerId, message } = JSON.parse(e.data);
 
-           this.messages.push(`Player ${playerId} says: ${message}`);
-        })
-        events.addEventListener("GAME_STARTED", () => {
+        events.addEventListener("GAME_STARTED", (e) => {
             this.started = true;
+
+            const { letters } = JSON.parse(e.data);
+            if (letters?.length) {
+                this.rack = letters;
+            }
+
+            // the game snapshot changed under us; pick up turn order
+            this.refreshMeta();
+        })
+
+        events.addEventListener("PLAYER_JOINED", (e) => {
+            const { playerId, playerName } = JSON.parse(e.data);
+            if (!this.getPlayerById(playerId)) {
+                this.players.push({ id: playerId, name: playerName, score: 0 });
+            }
+        })
+
+        events.addEventListener("WORD_PLAYED", (e) => {
+            const played: { playerId: string, nextPlayerId: string, points: number } & Placement = JSON.parse(e.data);
+
+            this.mergeWord(played);
+            this.currentPlayerId = played.nextPlayerId;
+            this.challengeableMoverId = played.playerId;
+            this.myVote = false;
+
+            const player = this.getPlayerById(played.playerId);
+            if (player) {
+                player.score += played.points;
+            }
+
+            this.refreshMeta();
+        })
+
+        events.addEventListener("RACK_UPDATED", (e) => {
+            const { letters } = JSON.parse(e.data);
+            this.rack = letters || [];
+        })
+
+        events.addEventListener("TURN_PASSED", (e) => {
+            const { nextPlayerId } = JSON.parse(e.data);
+            this.currentPlayerId = nextPlayerId;
+            this.challengeableMoverId = null;
+            this.refreshMeta();
+        })
+
+        events.addEventListener("LETTERS_EXCHANGED", (e) => {
+            const { nextPlayerId } = JSON.parse(e.data);
+            this.currentPlayerId = nextPlayerId;
+            this.challengeableMoverId = null;
+            this.refreshMeta();
+        })
+
+        events.addEventListener("CHALLENGE_STARTED", (e) => {
+            this.challenge = JSON.parse(e.data);
+        })
+
+        events.addEventListener("CHALLENGE_VOTE_CAST", (e) => {
+            const { votesInvalid, votesValid, votesNeeded } = JSON.parse(e.data);
+            if (this.challenge) {
+                this.challenge = { ...this.challenge, votesInvalid, votesValid, votesNeeded };
+            }
+        })
+
+        events.addEventListener("CHALLENGE_RESOLVED", async (e) => {
+            const { upheld } = JSON.parse(e.data);
+            this.challenge = null;
+            this.challengeableMoverId = null;
+            this.myVote = false;
+
+            if (upheld) {
+                // the word came off the board; scores changed too
+                await this.reloadBoard();
+            }
+            await this.refreshMeta();
+        })
+
+        events.addEventListener("GAME_ENDED", (e) => {
+            const { winnerIds, scores } = JSON.parse(e.data);
+            this.finished = true;
+            this.winnerIds = winnerIds || [];
+            for (const player of this.players) {
+                if (scores && player.id in scores) {
+                    player.score = scores[player.id];
+                }
+            }
         })
     }
 
-    getPlayerById(id: string) {
-        return this.players.find(p => p.id === id);
+    // refreshMeta re-syncs scores, pool size, and turn from the server. It's
+    // cheap and keeps locally-tracked numbers honest.
+    async refreshMeta() {
+        let resp = await fetch(`${PUBLIC_API_URL}/api/v1/games/${this.id}`, {
+            credentials: "include"
+        });
+        if (!resp.ok) {
+            return;
+        }
+
+        const data = await resp.json();
+        this.players = data.players;
+        this.currentPlayerId = data.currentPlayerId;
+        this.lettersRemaining = data.lettersRemaining;
+        this.finished = data.finished;
+        this.winnerIds = data.winnerIds || [];
+        this.challenge = data.challenge || null;
+        this.challengeableMoverId = data.challengeableMoverId || null;
+    }
+
+    mergeWord(placement: Placement) {
+        const cells = [...this.board.cells];
+        const letters = [...placement.word];
+
+        for (let i = 0; i < letters.length; i++) {
+            const x = placement.direction === "HORIZONTAL" ? placement.x + i : placement.x;
+            const y = placement.direction === "VERTICAL" ? placement.y + i : placement.y;
+
+            const existing = cells.find(cell => cell.x === x && cell.y === y);
+            if (existing) {
+                existing.letter = letters[i];
+            } else {
+                cells.push({ x, y, letter: letters[i] });
+            }
+        }
+
+        this.board = { cells };
     }
 
     async join(name: string) {
@@ -161,6 +348,7 @@ export  class GameController {
 
     async start() {
         let resp = await fetch(`${PUBLIC_API_URL}/api/v1/games/${this.id}`, {
+            credentials: "include",
             method: "PATCH",
             headers: {
                 "Content-Type": "application/json"
@@ -179,5 +367,114 @@ export  class GameController {
 
         this.started = started;
         this.rack = rack;
+        await this.refreshMeta();
+    }
+
+    async findPlacements(x: number, y: number) {
+        this.error = "";
+        this.placements = [];
+        this.selectedPlacement = 0;
+
+        let resp = await fetch(`${PUBLIC_API_URL}/api/v1/games/${this.id}/board/placements?x=${x}&y=${y}&word=${encodeURIComponent(this.input)}`, {
+            credentials: "include"
+        });
+
+        if (!resp.ok) {
+            this.error = await this.errorMessage(resp, "That word can't go there.");
+            return;
+        }
+
+        this.placements = await resp.json();
+    }
+
+    clearPlacements() {
+        this.placements = [];
+        this.selectedPlacement = 0;
+        this.error = "";
+    }
+
+    async playSelectedPlacement() {
+        const placement = this.placements[this.selectedPlacement];
+        if (!placement) return;
+
+        let resp = await fetch(`${PUBLIC_API_URL}/api/v1/games/${this.id}/board`, {
+            credentials: "include",
+            method: "PATCH",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                operation: "ADD_WORD",
+                payload: {
+                    x: placement.x,
+                    y: placement.y,
+                    direction: placement.direction,
+                    word: placement.word,
+                }
+            })
+        });
+
+        if (!resp.ok) {
+            this.error = await this.errorMessage(resp, "Couldn't play that word.");
+            return;
+        }
+
+        // board, rack, scores, and turn all update via events
+        this.input = "";
+        this.clearPlacements();
+    }
+
+    async updateGame(operation: string, payload?: object) {
+        this.error = "";
+
+        let resp = await fetch(`${PUBLIC_API_URL}/api/v1/games/${this.id}`, {
+            credentials: "include",
+            method: "PATCH",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({ operation, payload })
+        });
+
+        if (!resp.ok) {
+            this.error = await this.errorMessage(resp, "That didn't work.");
+            return null;
+        }
+
+        return await resp.json();
+    }
+
+    async pass() {
+        await this.updateGame("PASS_TURN");
+    }
+
+    async exchange(letters: string[]) {
+        const result = await this.updateGame("EXCHANGE_LETTERS", { letters });
+        if (result) {
+            this.input = "";
+        }
+    }
+
+    async challengeWord() {
+        const result = await this.updateGame("CHALLENGE_WORD");
+        if (result) {
+            this.myVote = true;
+        }
+    }
+
+    async castVote(vote: "VALID" | "INVALID") {
+        const result = await this.updateGame("CAST_VOTE", { vote });
+        if (result) {
+            this.myVote = true;
+        }
+    }
+
+    async errorMessage(resp: Response, fallback: string) {
+        try {
+            const { error } = await resp.json();
+            return error || fallback;
+        } catch {
+            return fallback;
+        }
     }
 }

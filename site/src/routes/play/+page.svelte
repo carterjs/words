@@ -1,5 +1,5 @@
 <script lang="ts">
-    import {GameController} from '$lib/game.svelte.ts';
+    import {GameController} from '$lib/game.svelte';
     import { page } from '$app/stores';
     import {onMount} from "svelte";
     import Board from "$lib/Board.svelte";
@@ -41,8 +41,79 @@
     let name = $state("");
 
     $effect(() => {
-        game.input = game.input.toUpperCase();
+        game.input = game.input.toUpperCase().replace(/[^A-Z]/g, "");
     })
+
+    let selectedCell = $state<{ x: number; y: number } | null>(null);
+
+    async function handleCellTap(x: number, y: number) {
+        if (!game.started || game.finished || !game.myTurn || game.challenge) {
+            return;
+        }
+
+        if (!game.input) {
+            game.error = "Type a word first, then tap where it goes.";
+            return;
+        }
+
+        selectedCell = { x, y };
+        await game.findPlacements(x, y);
+
+        if (game.placements.length === 0 && !game.error) {
+            game.error = "That word doesn't fit there.";
+            selectedCell = null;
+        }
+    }
+
+    function cancelPlacement() {
+        selectedCell = null;
+        game.clearPlacements();
+    }
+
+    async function playWord() {
+        await game.playSelectedPlacement();
+        if (!game.error) {
+            selectedCell = null;
+        }
+    }
+
+    // ghost tiles previewing the currently selected placement option;
+    // letters already on the board are left out
+    let ghostCells = $derived.by(() => {
+        const placement = game.placements[game.selectedPlacement];
+        if (!placement) return [];
+
+        const ghosts = [];
+        for (let i = 0; i < placement.word.length; i++) {
+            const x = placement.direction === "HORIZONTAL" ? placement.x + i : placement.x;
+            const y = placement.direction === "VERTICAL" ? placement.y + i : placement.y;
+
+            const occupied = game.board.cells.some(cell => cell.x === x && cell.y === y && cell.letter);
+            if (!occupied) {
+                ghosts.push({ x, y, letter: placement.word[i] });
+            }
+        }
+
+        return ghosts;
+    });
+
+    let selectedPlacement = $derived(game.placements[game.selectedPlacement]);
+
+    let canChallenge = $derived(
+        game.started
+        && !game.finished
+        && !game.challenge
+        && game.challengeableMoverId !== null
+        && game.challengeableMoverId !== game.playerId
+    );
+
+    let canVote = $derived(
+        game.challenge !== null
+        && !game.myVote
+        && game.playerId !== null
+        && game.playerId !== game.challenge?.moverId
+        && game.playerId !== game.challenge?.challengerId
+    );
 </script>
 
 <svelte:window onresize={applyWindowSize} />
@@ -51,15 +122,6 @@
 </svelte:head>
 
 <style>
-    main {
-        padding: 0;
-        max-width: 960px;
-        margin: 0 auto;
-        display: flex;
-        flex-direction: column;
-        height: 100%;
-    }
-
     .panel {
         display: flex;
         flex-direction: column;
@@ -71,6 +133,7 @@
         backdrop-filter: blur(10px);
         box-shadow: 0 0 10px rgba(0,0,0,0.1);
         padding: 1rem;
+        gap: 0.5rem;
     }
 
     input {
@@ -94,11 +157,113 @@
 
     header {
         top: 0;
+        padding: 0.5rem 1rem;
     }
 
     footer {
         bottom: 0;
         justify-content: center;
+    }
+
+    .scores {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 0.25rem 1rem;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        font-size: 0.9rem;
+    }
+
+    .scores .current {
+        font-weight: bold;
+    }
+
+    .status {
+        margin: 0;
+        font-size: 0.85rem;
+        color: rgba(0,0,0,0.6);
+    }
+
+    .actions {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 0.5rem;
+    }
+
+    .actions button {
+        font: inherit;
+        font-size: 0.9rem;
+        padding: 0.4rem 0.9rem;
+        border-radius: 0.5rem;
+        border: 1px solid rgba(0,0,0,0.25);
+        background-color: rgba(255,255,255,0.85);
+        cursor: pointer;
+    }
+
+    .actions button.primary {
+        background-color: #2563eb;
+        border-color: #2563eb;
+        color: white;
+    }
+
+    .actions button:disabled {
+        opacity: 0.5;
+        cursor: default;
+    }
+
+    .error {
+        margin: 0;
+        color: #b91c1c;
+        font-size: 0.9rem;
+        text-align: center;
+    }
+
+    .hint {
+        margin: 0;
+        font-size: 0.85rem;
+        color: rgba(0,0,0,0.55);
+        text-align: center;
+    }
+
+    .challenge {
+        text-align: center;
+        font-size: 0.9rem;
+    }
+
+    .challenge p {
+        margin: 0 0 0.5rem;
+    }
+
+    .gameover {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background-color: rgba(255,255,255,0.75);
+        backdrop-filter: blur(4px);
+    }
+
+    .gameover > div {
+        background: white;
+        border-radius: 1rem;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+        padding: 2rem;
+        text-align: center;
+        max-width: 20rem;
+    }
+
+    .gameover h2 {
+        margin-top: 0;
+    }
+
+    .gameover ol {
+        list-style: none;
+        margin: 0;
+        padding: 0;
     }
 </style>
 
@@ -108,6 +273,9 @@
     <Board
             cells={[...game.board.cells]}
             requestCells={(x1, y1, x2, y2) => game.loadBoard(x1, y1, x2, y2)}
+            onCellTap={handleCellTap}
+            ghostCells={ghostCells}
+            highlightCell={selectedCell}
             width={boardWidth}
             height={boardHeight}
             offsetX={offsetX}
@@ -116,7 +284,30 @@
             style="position: fixed; top: 0; left: 0; width: 100%; height: 100%;"
             cellSize={50}
     />
-    <div class="panel">
+
+    {#if game.started}
+        <header class="panel">
+            <ul class="scores">
+                {#each game.players as player (player.id)}
+                    <li class:current={player.id === game.currentPlayerId}>
+                        {player.name}{player.id === game.playerId ? " (you)" : ""}: {player.score}
+                    </li>
+                {/each}
+            </ul>
+            {#if !game.finished}
+                <p class="status">
+                    {game.myTurn ? "Your turn" : `${game.playerName(game.currentPlayerId)}'s turn`}
+                    · {game.lettersRemaining} letters left
+                </p>
+            {/if}
+        </header>
+    {/if}
+
+    <footer class="panel">
+        {#if game.error}
+            <p class="error">{game.error}</p>
+        {/if}
+
         {#if !game.playerId}
             <div>
                 <label>
@@ -126,21 +317,88 @@
 
                 <button class="button" onclick={async () => await game.join(name)}>Join game</button>
             </div>
-        {:else}
-            {#if game.started}
-                <div>
-                    <Rack letters={game.sortedRack} letterPoints={game.letterPoints} input={game.input} />
-                    <input type="text" bind:value={game.input} placeholder="WORD" class="input" />
-                </div>
-            {:else}
-                <div>
-                    <button class="button" onclick={(e) => {
-                        e.preventDefault();
+        {:else if !game.started}
+            <div class="actions">
+                <button class="primary" onclick={(e) => {
+                    e.preventDefault();
 
-                        game.start();
-                    }}>Start game</button>
-                </div>
-            {/if}
+                    game.start();
+                }}>Start game</button>
+            </div>
+            <p class="hint">Waiting for players... share this page's link to invite them.</p>
+        {:else if game.challenge}
+            <div class="challenge">
+                <p>
+                    <strong>{game.playerName(game.challenge.challengerId)}</strong> challenged
+                    <strong>{game.playerName(game.challenge.moverId)}</strong>'s word!
+                    ({game.challenge.votesInvalid + game.challenge.votesValid} of {game.challenge.eligibleVoters} votes in)
+                </p>
+                {#if canVote}
+                    <div class="actions">
+                        <button onclick={() => game.castVote("VALID")}>Real word</button>
+                        <button onclick={() => game.castVote("INVALID")}>Not a word</button>
+                    </div>
+                {:else}
+                    <p class="hint">Waiting for votes...</p>
+                {/if}
+            </div>
+        {:else if selectedPlacement}
+            <div class="actions">
+                {#if game.placements.length > 1}
+                    <button onclick={() => game.selectedPlacement = (game.selectedPlacement + game.placements.length - 1) % game.placements.length}>&larr;</button>
+                {/if}
+                <button class="primary" onclick={playWord}>
+                    Play {selectedPlacement.word} for {selectedPlacement.points} pts
+                    {#if game.placements.length > 1}
+                        ({game.selectedPlacement + 1}/{game.placements.length})
+                    {/if}
+                </button>
+                {#if game.placements.length > 1}
+                    <button onclick={() => game.selectedPlacement = (game.selectedPlacement + 1) % game.placements.length}>&rarr;</button>
+                {/if}
+                <button onclick={cancelPlacement}>Cancel</button>
+            </div>
+        {:else}
+            <div style="width: 100%; max-width: 24rem;">
+                <Rack letters={game.sortedRack} letterPoints={game.letterPoints} input={game.input} />
+                {#if game.myTurn}
+                    <input type="text" bind:value={game.input} placeholder="WORD" class="input" />
+                    <p class="hint">Type a word, then tap the square where it starts.</p>
+                {/if}
+            </div>
+            <div class="actions">
+                {#if game.myTurn}
+                    <button onclick={() => game.pass()}>Pass</button>
+                    <button
+                            disabled={game.input.length === 0}
+                            onclick={() => game.exchange([...game.input])}
+                    >Exchange{game.input.length > 0 ? ` ${game.input.length}` : ""}</button>
+                {/if}
+                {#if canChallenge}
+                    <button onclick={() => game.challengeWord()}>Challenge last word</button>
+                {/if}
+            </div>
         {/if}
-    </div>
+    </footer>
+
+    {#if game.finished}
+        <div class="gameover">
+            <div>
+                <h2>
+                    {#if game.winnerIds.length === 1}
+                        {game.playerName(game.winnerIds[0])} wins!
+                    {:else if game.winnerIds.length > 1}
+                        It's a tie!
+                    {:else}
+                        Game over
+                    {/if}
+                </h2>
+                <ol>
+                    {#each [...game.players].sort((a, b) => b.score - a.score) as player (player.id)}
+                        <li>{player.name}: {player.score}</li>
+                    {/each}
+                </ol>
+            </div>
+        </div>
+    {/if}
 {/if}

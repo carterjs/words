@@ -7,6 +7,9 @@
         letterPoints?: Record<string, number>;
         cells: Cell[];
         requestCells?: (x1: number, y1: number, x2: number, y2: number) => void;
+        onCellTap?: (x: number, y: number) => void;
+        ghostCells?: Cell[];
+        highlightCell?: { x: number; y: number } | null;
         width: number;
         height: number;
         scale?: number;
@@ -21,6 +24,9 @@
         letterPoints = {},
         cells = [],
         requestCells = (x1, y1, x2, y2) => console.log(x1, y1, x2, y2),
+        onCellTap,
+        ghostCells = [],
+        highlightCell = null,
         width,
         height,
         scale: initialScale = 1,
@@ -46,6 +52,7 @@
     function handlePointerDown(e: PointerEvent) {
         if (disabled) return;
         anchor = { x: e.offsetX, y: e.offsetY };
+        (e.currentTarget as SVGElement).setPointerCapture?.(e.pointerId);
     }
 
     function handlePointerMove(e: PointerEvent) {
@@ -55,12 +62,23 @@
         }
     }
 
-    function handlePointerUp() {
+    function handlePointerUp(e?: PointerEvent) {
+        // a pointer that barely moved is a tap on a cell, not a pan
+        const wasTap = e && anchor
+            && Math.abs(displacementX) < 8
+            && Math.abs(displacementY) < 8;
+
         anchor = null;
         offsetX += displacementX;
         offsetY += displacementY;
         displacementX = 0;
         displacementY = 0;
+
+        if (wasTap && onCellTap) {
+            const cellX = Math.floor((offsetX + e.offsetX) / scale / cellSize);
+            const cellY = Math.floor((offsetY + e.offsetY) / scale / cellSize);
+            onCellTap(cellX, cellY);
+        }
     }
 
     $effect(() => {
@@ -117,6 +135,7 @@
 <style>
     svg {
         user-select: none;
+        touch-action: none;
         cursor: pointer;
         background-position: var(--offset-x) var(--offset-y);
         background-size: var(--cell-size) var(--cell-size);
@@ -145,8 +164,8 @@
         onpointerdown={handlePointerDown}
         onpointermove={handlePointerMove}
         onpointerup={handlePointerUp}
-        onpointercancel={handlePointerUp}
-        onpointerleave={handlePointerUp}
+        onpointercancel={() => handlePointerUp()}
+        onpointerleave={() => handlePointerUp()}
 >
     <rect
             x={0}
@@ -178,6 +197,31 @@
                 letter={cell.letter}
                 points={letterPoints[cell.letter]}
             />
+        {/if}
+    {/each}
+    {#if highlightCell}
+        <rect
+                x={highlightCell.x*cellSize}
+                y={highlightCell.y*cellSize}
+                width={cellSize}
+                height={cellSize}
+                fill="rgba(37,99,235,0.15)"
+                stroke="rgba(37,99,235,0.6)"
+                stroke-width="2"
+        />
+    {/if}
+    {#each ghostCells as cell (cell)}
+        {#if cell.letter}
+            <g opacity="0.65">
+                <Tile
+                    cellSize={cellSize}
+                    x={cell.x*cellSize}
+                    y={cell.y*cellSize}
+                    letter={cell.letter}
+                    points={letterPoints[cell.letter]}
+                    selected
+                />
+            </g>
         {/if}
     {/each}
 </svg>
