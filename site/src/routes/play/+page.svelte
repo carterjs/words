@@ -145,6 +145,9 @@
         game.announcement = null;
     }
 
+    // letters eligible for swapping - placeholders aren't rack letters
+    let swapLetters = $derived([...game.input].filter(letter => letter !== "*"));
+
     let canVote = $derived(
         game.challenge !== null
         && !game.myVote
@@ -235,10 +238,6 @@
         cursor: pointer;
     }
 
-    .input-tools {
-        margin-top: 0.5rem;
-    }
-
     .recenter {
         position: fixed;
         right: 1rem;
@@ -262,12 +261,50 @@
 
     .actions button {
         font: inherit;
-        font-size: 0.9rem;
-        padding: 0.4rem 0.9rem;
+        padding: 0 0.9rem;
+        height: 50px;
         border-radius: 0.5rem;
         border: 1px solid rgba(0,0,0,0.25);
         background-color: rgba(255,255,255,0.85);
         cursor: pointer;
+    }
+
+    /* the input row matches the 50px rack tiles: same height, same 20px letters */
+    .input-row {
+        display: flex;
+        align-items: stretch;
+        gap: 0.5rem;
+        margin-top: 0.5rem;
+        margin-bottom: 0.5rem;
+        height: 50px;
+    }
+
+    .input-row .input {
+        flex: 1;
+        margin: 0;
+        min-width: 0;
+        padding: 0 0.75rem;
+        font-size: 1.25rem;
+        letter-spacing: 0.1em;
+    }
+
+    .tool {
+        font: inherit;
+        font-size: 1.5rem;
+        width: 50px;
+        flex-shrink: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 0.5rem;
+        border: 1px solid rgba(0, 0, 0, 0.25);
+        background-color: rgba(255, 255, 255, 0.75);
+        cursor: pointer;
+    }
+
+    .tool:disabled {
+        opacity: 0.5;
+        cursor: default;
     }
 
     .actions button.primary {
@@ -456,32 +493,21 @@
                         onReorder={(letters) => game.setRackOrder(letters)}
                 />
                 {#if !game.finished}
-                    <input type="text" bind:value={game.input} placeholder="WORD" class="input" />
-                    <div class="actions input-tools">
-                        <button onclick={() => game.input += "*"} title="a letter already on the board">＋ board letter</button>
-                        <button disabled={!game.input} onclick={() => game.input = game.input.slice(0, -1)}>⌫ delete</button>
+                    <div class="input-row">
+                        <button class="tool" title="a letter already on the board" aria-label="board letter" onclick={() => game.input += "*"}>*</button>
+                        <input type="text" bind:value={game.input} placeholder="WORD" class="input" />
+                        <button class="tool" disabled={!game.input} aria-label="delete last letter" onclick={() => game.input = game.input.slice(0, -1)}>⌫</button>
                     </div>
-                    <p class="hint">
-                        {#if !game.myTurn}
-                            Plan while you wait: build a word and tap the board to preview it.
-                        {:else if game.board.cells.some(cell => cell.letter)}
-                            Tap where the word starts. "＋ board letter" adds a * for a letter you're crossing.
-                        {:else}
-                            Type a word, then tap the center star to place it.
+                    <div class="actions">
+                        <button disabled={!game.myTurn} onclick={() => game.pass()}>Skip my turn</button>
+                        <button
+                                disabled={!game.myTurn || swapLetters.length === 0}
+                                onclick={() => game.exchange(swapLetters)}
+                        >{swapLetters.length > 0 ? `Swap ${swapLetters.length} letter${swapLetters.length === 1 ? "" : "s"}` : "Swap letters"}</button>
+                        {#if canChallenge && game.challengeableMoverId}
+                            <button onclick={() => game.challengeWord()}>Challenge {game.playerName(game.challengeableMoverId)}'s word</button>
                         {/if}
-                    </p>
-                {/if}
-            </div>
-            <div class="actions">
-                {#if game.myTurn}
-                    <button onclick={() => game.pass()}>Skip my turn</button>
-                    <button
-                            disabled={game.input.length === 0}
-                            onclick={() => game.exchange([...game.input])}
-                    >{game.input.length > 0 ? `Swap ${game.input.length} letters` : "Swap letters"}</button>
-                {/if}
-                {#if canChallenge && game.challengeableMoverId}
-                    <button onclick={() => game.challengeWord()}>Challenge {game.playerName(game.challengeableMoverId)}'s word</button>
+                    </div>
                 {/if}
             </div>
         {/if}
