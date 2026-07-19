@@ -342,6 +342,23 @@ export  class GameController {
         this.board = { cells };
     }
 
+    // tapLetter adds an unused rack letter to the word being built, or
+    // removes a used one from it
+    tapLetter(letter: string, used: boolean) {
+        if (used) {
+            const index = this.input.lastIndexOf(letter);
+            if (index !== -1) {
+                this.input = this.input.slice(0, index) + this.input.slice(index + 1);
+            }
+        } else {
+            this.input += letter;
+        }
+    }
+
+    setRackOrder(letters: string[]) {
+        this.sortedRack = letters;
+    }
+
     async join(name: string) {
         let resp = await fetch(`${PUBLIC_API_URL}/api/v1/games/${this.id}`, {
             credentials: "include",

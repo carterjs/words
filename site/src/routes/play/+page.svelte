@@ -365,7 +365,13 @@
             </div>
         {:else}
             <div style="width: 100%; max-width: 24rem;">
-                <Rack letters={game.sortedRack} letterPoints={game.letterPoints} input={game.input} />
+                <Rack
+                        letters={game.sortedRack}
+                        letterPoints={game.letterPoints}
+                        input={game.input}
+                        onTapLetter={(letter, used) => game.tapLetter(letter, used)}
+                        onReorder={(letters) => game.setRackOrder(letters)}
+                />
                 {#if !game.finished}
                     <input type="text" bind:value={game.input} placeholder="WORD" class="input" />
                     <p class="hint">

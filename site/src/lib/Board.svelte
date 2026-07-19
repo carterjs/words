@@ -90,7 +90,11 @@
         if (disabled) return;
         const position = pointerPosition(e);
         pointers.set(e.pointerId, position);
-        svgElement.setPointerCapture?.(e.pointerId);
+        try {
+            svgElement.setPointerCapture?.(e.pointerId);
+        } catch {
+            // synthetic events have no active pointer to capture
+        }
 
         if (pointers.size === 2) {
             // second finger down: commit any in-progress pan, start pinching

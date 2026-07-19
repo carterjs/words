@@ -8,6 +8,14 @@ primary_region = 'den'
 
 [build]
 
+[env]
+  DATA_DIR = '/data'
+
+# requires a one-time `fly volumes create words_data --region den --size 1`
+[mounts]
+  source = 'words_data'
+  destination = '/data'
+
 [http_service]
   internal_port = 8080
   force_https = true
