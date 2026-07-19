@@ -448,6 +448,11 @@ func (game *Game) FindPlacements(playerID string, point Point, letters string) (
 			deltaColumn, deltaRow := direction.Vector(-offset)
 			word := NewWord(point.Offset(deltaColumn, deltaRow), direction, letters)
 
+			word, resolvable := game.board.FillPlaceholders(word)
+			if !resolvable {
+				continue
+			}
+
 			result, err := game.checkWord(playerID, word)
 			if err != nil {
 				continue

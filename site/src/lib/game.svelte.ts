@@ -267,6 +267,11 @@ export  class GameController {
             this.challengeableMoverId = played.playerId;
             this.myVote = false;
 
+            // the board changed under any placement someone was previewing
+            if (played.playerId !== this.playerId) {
+                this.clearPlacements();
+            }
+
             this.lastWord = {
                 playerId: played.playerId,
                 x: played.x,
@@ -439,8 +444,8 @@ export  class GameController {
         });
 
         if (!resp.ok) {
-            console.error("failed to join game", await resp.json());
-            throw new Error(`Failed to join game ${this.id}`);
+            this.error = await this.errorMessage(resp, "Couldn't join the game.");
+            return;
         }
 
         let { playerId, players } = await resp.json();

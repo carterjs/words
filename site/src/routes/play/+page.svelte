@@ -41,18 +41,15 @@
     let name = $state("");
 
     $effect(() => {
-        game.input = game.input.toUpperCase().replace(/[^A-Z]/g, "");
+        // * is a placeholder for a letter already on the board
+        game.input = game.input.toUpperCase().replace(/[^A-Z*]/g, "");
     })
 
     let selectedCell = $state<{ x: number; y: number } | null>(null);
 
     async function handleCellTap(x: number, y: number) {
-        if (!game.started || game.finished || game.challenge) {
-            return;
-        }
-
-        if (!game.myTurn) {
-            game.error = `It's ${game.playerName(game.currentPlayerId)}'s turn.`;
+        // planning is allowed off-turn; playing isn't. Observers can't plan.
+        if (!game.started || game.finished || game.challenge || !game.playerId) {
             return;
         }
 
@@ -131,6 +128,13 @@
             x: lastWord.direction === "HORIZONTAL" ? lastWord.x + i : lastWord.x,
             y: lastWord.direction === "VERTICAL" ? lastWord.y + i : lastWord.y,
         }));
+    });
+
+    // a placement preview only makes sense while placements are offered
+    $effect(() => {
+        if (game.placements.length === 0) {
+            selectedCell = null;
+        }
     });
 
     function handleAnnouncementTap() {
@@ -229,6 +233,10 @@
         background-color: rgba(37,99,235,0.12);
         color: #1e40af;
         cursor: pointer;
+    }
+
+    .input-tools {
+        margin-top: 0.5rem;
     }
 
     .recenter {
@@ -382,14 +390,18 @@
         {/if}
 
         {#if !game.playerId}
-            <div>
-                <label>
-                    Name
-                    <input type="text" bind:value={name}>
-                </label>
+            {#if game.started}
+                <p class="hint">You're watching this game - it already started, so you can't join.</p>
+            {:else}
+                <div>
+                    <label>
+                        Name
+                        <input type="text" bind:value={name}>
+                    </label>
 
-                <button class="button" onclick={async () => await game.join(name)}>Join game</button>
-            </div>
+                    <button class="button" onclick={async () => await game.join(name)}>Join game</button>
+                </div>
+            {/if}
         {:else if !game.started}
             <div class="actions">
                 <button class="primary" onclick={(e) => {
@@ -420,7 +432,7 @@
                 {#if game.placements.length > 1}
                     <button onclick={() => game.selectedPlacement = (game.selectedPlacement + game.placements.length - 1) % game.placements.length}>&larr;</button>
                 {/if}
-                <button class="primary" onclick={playWord}>
+                <button class="primary" disabled={!game.myTurn} onclick={playWord}>
                     Play {selectedPlacement.word} for {selectedPlacement.points} pts
                     {#if game.placements.length > 1}
                         ({game.selectedPlacement + 1}/{game.placements.length})
@@ -431,6 +443,9 @@
                 {/if}
                 <button onclick={cancelPlacement}>Cancel</button>
             </div>
+            {#if !game.myTurn}
+                <p class="hint">Ready to go - you can play it when your turn comes.</p>
+            {/if}
         {:else}
             <div style="width: 100%; max-width: 24rem;">
                 <Rack
@@ -442,11 +457,15 @@
                 />
                 {#if !game.finished}
                     <input type="text" bind:value={game.input} placeholder="WORD" class="input" />
+                    <div class="actions input-tools">
+                        <button onclick={() => game.input += "*"} title="a letter already on the board">＋ board letter</button>
+                        <button disabled={!game.input} onclick={() => game.input = game.input.slice(0, -1)}>⌫ delete</button>
+                    </div>
                     <p class="hint">
                         {#if !game.myTurn}
-                            Plan your next word while you wait.
+                            Plan while you wait: build a word and tap the board to preview it.
                         {:else if game.board.cells.some(cell => cell.letter)}
-                            Type a word, then tap the square where it starts.
+                            Tap where the word starts. "＋ board letter" adds a * for a letter you're crossing.
                         {:else}
                             Type a word, then tap the center star to place it.
                         {/if}

@@ -38,6 +38,38 @@ func (board *Board) Letter(point Point) (rune, bool) {
 	return letter, exists
 }
 
+// PlaceholderLetter marks a position in a typed word that must be filled by
+// a letter already on the board.
+const PlaceholderLetter = '*'
+
+// FillPlaceholders replaces each placeholder in the word with the board
+// letter at its position, reporting false when one lands on an empty cell.
+func (board *Board) FillPlaceholders(word Word) (Word, bool) {
+	letters := word.Letters()
+
+	changed := false
+	for position, letter := range letters {
+		if letter != PlaceholderLetter {
+			continue
+		}
+
+		point, _, _ := word.Index(position)
+		existing, occupied := board.Letter(point)
+		if !occupied {
+			return Word{}, false
+		}
+
+		letters[position] = existing
+		changed = true
+	}
+
+	if !changed {
+		return word, true
+	}
+
+	return NewWord(word.Start(), word.Direction(), string(letters)), true
+}
+
 // Modifier returns the modifier at the given point and whether one exists there.
 func (board *Board) Modifier(point Point) (Modifier, bool) {
 	return board.config.Modifiers.Get(point.Column(), point.Row())

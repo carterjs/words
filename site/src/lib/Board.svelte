@@ -82,10 +82,48 @@
         return Math.min(maxScale, Math.max(minScale, value));
     }
 
-    // centerOn pans the view so the given cell sits at the center of the board
+    // centerOn glides the view so the given cell sits at the center of the
+    // board, easing in and out
     export function centerOn(cellX: number, cellY: number) {
-        offsetX = (cellX + 0.5) * cellSize * scale - width / 2;
-        offsetY = (cellY + 0.5) * cellSize * scale - height / 2;
+        glideTo(
+            (cellX + 0.5) * cellSize * scale - width / 2,
+            (cellY + 0.5) * cellSize * scale - height / 2,
+        );
+    }
+
+    let glideFrame = 0;
+
+    function glideTo(targetX: number, targetY: number) {
+        cancelAnimationFrame(glideFrame);
+
+        const fromX = offsetX;
+        const fromY = offsetY;
+        const distance = Math.hypot(targetX - fromX, targetY - fromY);
+
+        if (distance < 1 || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+            offsetX = targetX;
+            offsetY = targetY;
+            return;
+        }
+
+        // farther glides get a little longer, capped to stay snappy
+        const duration = Math.min(900, 350 + distance * 0.15);
+        const easeInOut = (t: number) => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+
+        let started: number | null = null;
+        const step = (now: number) => {
+            if (started === null) started = now;
+            const eased = easeInOut(Math.min(1, (now - started) / duration));
+
+            offsetX = fromX + (targetX - fromX) * eased;
+            offsetY = fromY + (targetY - fromY) * eased;
+
+            if (eased < 1) {
+                glideFrame = requestAnimationFrame(step);
+            }
+        };
+
+        glideFrame = requestAnimationFrame(step);
     }
 
     // report the visible cell range so the page can tell when the player
@@ -109,6 +147,7 @@
 
     function handlePointerDown(e: PointerEvent) {
         if (disabled) return;
+        cancelAnimationFrame(glideFrame);
         const position = pointerPosition(e);
         pointers.set(e.pointerId, position);
         try {
@@ -182,17 +221,37 @@
         }
     }
 
-    // Svelte registers template wheel handlers as passive, so attach directly
-    // to be able to preventDefault the page zoom/scroll
+    // Svelte registers template wheel/touch handlers as passive, so attach
+    // directly to be able to preventDefault the page zoom/scroll
     $effect(() => {
         const handleWheel = (e: WheelEvent) => {
             if (disabled) return;
             e.preventDefault();
+            cancelAnimationFrame(glideFrame);
             zoomTo(clampScale(scale * Math.exp(-e.deltaY * 0.002)), pointerPosition(e));
         };
 
+        // iOS Safari ignores touch-action for its page pinch-zoom and
+        // tab-switcher gestures; consume multi-touch and gesture events so a
+        // pinch over the board only zooms the board
+        const consumeMultiTouch = (e: TouchEvent) => {
+            if (e.touches.length > 1) e.preventDefault();
+        };
+        const consumeGesture = (e: Event) => e.preventDefault();
+
         svgElement.addEventListener("wheel", handleWheel, { passive: false });
-        return () => svgElement.removeEventListener("wheel", handleWheel);
+        svgElement.addEventListener("touchstart", consumeMultiTouch, { passive: false });
+        svgElement.addEventListener("touchmove", consumeMultiTouch, { passive: false });
+        svgElement.addEventListener("gesturestart", consumeGesture);
+        svgElement.addEventListener("gesturechange", consumeGesture);
+
+        return () => {
+            svgElement.removeEventListener("wheel", handleWheel);
+            svgElement.removeEventListener("touchstart", consumeMultiTouch);
+            svgElement.removeEventListener("touchmove", consumeMultiTouch);
+            svgElement.removeEventListener("gesturestart", consumeGesture);
+            svgElement.removeEventListener("gesturechange", consumeGesture);
+        };
     })
 
     $effect(() => {

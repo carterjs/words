@@ -280,6 +280,7 @@ func TestGame_FindPlacements(t *testing.T) {
 	tests := []struct {
 		name           string
 		skipStart      bool
+		setup          bool
 		letters        string
 		wantErr        error
 		wantPlacements int
@@ -287,6 +288,9 @@ func TestGame_FindPlacements(t *testing.T) {
 		{name: "rejects an unstarted game", skipStart: true, letters: "AA", wantErr: words.ErrGameNotStarted},
 		{name: "rejects letters with no placement", letters: "ZZ", wantErr: words.ErrCannotPlayWord},
 		{name: "finds placements through the point", letters: "AA", wantPlacements: 4},
+		{name: "fills placeholders from board letters", setup: true, letters: "*A", wantPlacements: 1},
+		{name: "rejects placeholders over empty cells", letters: "*A", wantErr: words.ErrCannotPlayWord},
+		{name: "rejects a word of only placeholders", setup: true, letters: "*", wantErr: words.ErrCannotPlayWord},
 	}
 
 	for _, test := range tests {
@@ -296,6 +300,10 @@ func TestGame_FindPlacements(t *testing.T) {
 			game := newLobbyGame(t, 1, testConfig(map[rune]int{'A': 20}, 3))
 			if !test.skipStart {
 				require.NoError(t, game.Start())
+			}
+			if test.setup {
+				_, err := game.PlayWord(game.Players()[0].ID(), horizontal(0, 0, "AA"))
+				require.NoError(t, err)
 			}
 
 			placements, err := game.FindPlacements(game.Players()[0].ID(), words.NewPoint(0, 0), test.letters)
