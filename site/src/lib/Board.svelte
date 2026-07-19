@@ -182,8 +182,8 @@
         }
     }
 
-    // Svelte registers template wheel handlers as passive, so attach directly
-    // to be able to preventDefault the page zoom/scroll
+    // Svelte registers template wheel/touch handlers as passive, so attach
+    // directly to be able to preventDefault the page zoom/scroll
     $effect(() => {
         const handleWheel = (e: WheelEvent) => {
             if (disabled) return;
@@ -191,8 +191,27 @@
             zoomTo(clampScale(scale * Math.exp(-e.deltaY * 0.002)), pointerPosition(e));
         };
 
+        // iOS Safari ignores touch-action for its page pinch-zoom and
+        // tab-switcher gestures; consume multi-touch and gesture events so a
+        // pinch over the board only zooms the board
+        const consumeMultiTouch = (e: TouchEvent) => {
+            if (e.touches.length > 1) e.preventDefault();
+        };
+        const consumeGesture = (e: Event) => e.preventDefault();
+
         svgElement.addEventListener("wheel", handleWheel, { passive: false });
-        return () => svgElement.removeEventListener("wheel", handleWheel);
+        svgElement.addEventListener("touchstart", consumeMultiTouch, { passive: false });
+        svgElement.addEventListener("touchmove", consumeMultiTouch, { passive: false });
+        svgElement.addEventListener("gesturestart", consumeGesture);
+        svgElement.addEventListener("gesturechange", consumeGesture);
+
+        return () => {
+            svgElement.removeEventListener("wheel", handleWheel);
+            svgElement.removeEventListener("touchstart", consumeMultiTouch);
+            svgElement.removeEventListener("touchmove", consumeMultiTouch);
+            svgElement.removeEventListener("gesturestart", consumeGesture);
+            svgElement.removeEventListener("gesturechange", consumeGesture);
+        };
     })
 
     $effect(() => {

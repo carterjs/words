@@ -48,12 +48,8 @@
     let selectedCell = $state<{ x: number; y: number } | null>(null);
 
     async function handleCellTap(x: number, y: number) {
-        if (!game.started || game.finished || game.challenge) {
-            return;
-        }
-
-        if (!game.myTurn) {
-            game.error = `It's ${game.playerName(game.currentPlayerId)}'s turn.`;
+        // planning is allowed off-turn; playing isn't. Observers can't plan.
+        if (!game.started || game.finished || game.challenge || !game.playerId) {
             return;
         }
 
@@ -132,6 +128,13 @@
             x: lastWord.direction === "HORIZONTAL" ? lastWord.x + i : lastWord.x,
             y: lastWord.direction === "VERTICAL" ? lastWord.y + i : lastWord.y,
         }));
+    });
+
+    // a placement preview only makes sense while placements are offered
+    $effect(() => {
+        if (game.placements.length === 0) {
+            selectedCell = null;
+        }
     });
 
     function handleAnnouncementTap() {
@@ -429,7 +432,7 @@
                 {#if game.placements.length > 1}
                     <button onclick={() => game.selectedPlacement = (game.selectedPlacement + game.placements.length - 1) % game.placements.length}>&larr;</button>
                 {/if}
-                <button class="primary" onclick={playWord}>
+                <button class="primary" disabled={!game.myTurn} onclick={playWord}>
                     Play {selectedPlacement.word} for {selectedPlacement.points} pts
                     {#if game.placements.length > 1}
                         ({game.selectedPlacement + 1}/{game.placements.length})
@@ -440,6 +443,9 @@
                 {/if}
                 <button onclick={cancelPlacement}>Cancel</button>
             </div>
+            {#if !game.myTurn}
+                <p class="hint">Ready to go - you can play it when your turn comes.</p>
+            {/if}
         {:else}
             <div style="width: 100%; max-width: 24rem;">
                 <Rack
@@ -457,7 +463,7 @@
                     </div>
                     <p class="hint">
                         {#if !game.myTurn}
-                            Plan your next word while you wait.
+                            Plan while you wait: build a word and tap the board to preview it.
                         {:else if game.board.cells.some(cell => cell.letter)}
                             Tap where the word starts. "＋ board letter" adds a * for a letter you're crossing.
                         {:else}

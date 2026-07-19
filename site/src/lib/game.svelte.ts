@@ -267,6 +267,11 @@ export  class GameController {
             this.challengeableMoverId = played.playerId;
             this.myVote = false;
 
+            // the board changed under any placement someone was previewing
+            if (played.playerId !== this.playerId) {
+                this.clearPlacements();
+            }
+
             this.lastWord = {
                 playerId: played.playerId,
                 x: played.x,
