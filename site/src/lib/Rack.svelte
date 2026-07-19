@@ -1,4 +1,6 @@
 <script lang="ts">
+    import { untrack } from "svelte";
+    import { flip } from "svelte/animate";
     import Tile from "$lib/Tile.svelte";
 
     type Props = {
@@ -11,28 +13,65 @@
 
     const { letters, letterPoints={}, input="", onTapLetter, onReorder }: Props = $props();
 
-    let unusedLetters = $state<string[]>([]);
-    let usedLetters = $state<string[]>([]);
+    // tiles carry stable ids so reorders can animate; reconcile against the
+    // letters prop, reusing ids for letters still on the rack
+    let tiles = $state<{ id: number; letter: string }[]>([]);
+    let nextId = 0;
 
     $effect(() => {
-        let nextUnusedLetters = [...letters];
-        let nextUsedLetters = [];
+        const incoming = letters;
+        untrack(() => {
+            const pool = [...tiles];
+            tiles = incoming.map((letter) => {
+                const index = pool.findIndex(tile => tile.letter === letter);
+                if (index !== -1) {
+                    return pool.splice(index, 1)[0];
+                }
+                return { id: nextId++, letter };
+            });
+        });
+    });
 
-        for (let letter of input) {
-            let index = nextUnusedLetters.indexOf(letter);
-            if (index !== -1) {
-                nextUnusedLetters.splice(index, 1);
-                nextUsedLetters.push(letter);
+    // the tiles the player explicitly tapped into the word, so duplicates
+    // highlight the copy that was actually touched
+    let tappedIds = $state<number[]>([]);
+
+    $effect(() => {
+        if (input === "") {
+            tappedIds = [];
+        }
+    });
+
+    // tiles spent on the current word, highlighted in place: tapped tiles
+    // first, then first-match for typed letters
+    let usedIds = $derived.by(() => {
+        const ids = new Set<number>();
+        const needed = new Map<string, number>();
+        for (const letter of input) {
+            needed.set(letter, (needed.get(letter) ?? 0) + 1);
+        }
+
+        for (const id of tappedIds) {
+            const tile = tiles.find(candidate => candidate.id === id);
+            if (tile && (needed.get(tile.letter) ?? 0) > 0) {
+                ids.add(tile.id);
+                needed.set(tile.letter, (needed.get(tile.letter) ?? 0) - 1);
             }
         }
 
-        unusedLetters = nextUnusedLetters;
-        usedLetters = nextUsedLetters;
-    })
+        for (const tile of tiles) {
+            if (!ids.has(tile.id) && (needed.get(tile.letter) ?? 0) > 0) {
+                ids.add(tile.id);
+                needed.set(tile.letter, (needed.get(tile.letter) ?? 0) - 1);
+            }
+        }
+
+        return ids;
+    });
 
     let listElement: HTMLUListElement;
 
-    // index within unusedLetters of the tile being dragged, if any
+    // index within tiles of the one being dragged, if any
     let dragIndex = $state<number | null>(null);
     let dragMoved = $state(false);
     let dragStart = { x: 0, y: 0 };
@@ -85,27 +124,30 @@
         }
         if (!dragMoved) return;
 
-        const target = Math.max(0, Math.min(
-            unusedLetters.length - 1,
-            nearestDisplayIndex(e) - usedLetters.length,
-        ));
-
+        const target = Math.max(0, Math.min(tiles.length - 1, nearestDisplayIndex(e)));
         if (target !== dragIndex) {
-            const next = [...unusedLetters];
+            const next = [...tiles];
             const [moved] = next.splice(dragIndex, 1);
             next.splice(target, 0, moved);
-            unusedLetters = next;
+            tiles = next;
             dragIndex = target;
         }
     }
 
     function handlePointerUp() {
         if (dragIndex === null) return;
+        const tile = tiles[dragIndex];
 
         if (dragMoved) {
-            onReorder?.([...usedLetters, ...unusedLetters]);
-        } else {
-            onTapLetter?.(unusedLetters[dragIndex], false);
+            onReorder?.(tiles.map(t => t.letter));
+        } else if (tile) {
+            const used = usedIds.has(tile.id);
+            if (used) {
+                tappedIds = tappedIds.filter(id => id !== tile.id);
+            } else {
+                tappedIds = [...tappedIds, tile.id];
+            }
+            onTapLetter?.(tile.letter, used);
         }
 
         dragIndex = null;
@@ -164,26 +206,22 @@
 </style>
 
 <ul bind:this={listElement}>
-    {#each usedLetters as letter, index (index)}
-        <li onpointerup={() => onTapLetter?.(letter, true)}>
-            <Tile cellSize={50} letter={letter} x={0} y={0} points={letterPoints[letter]} selected />
-        </li>
-    {/each}
-    {#each unusedLetters as letter, index (index)}
+    {#each tiles as tile, index (tile.id)}
         <li
-                class:dragging={dragIndex === index}
+                animate:flip={{ duration: 150 }}
+                class:dragging={dragIndex === index && dragMoved}
                 onpointerdown={(e) => handlePointerDown(e, index)}
                 onpointermove={handlePointerMove}
                 onpointerup={handlePointerUp}
                 onpointercancel={handlePointerCancel}
         >
-            <Tile cellSize={50} letter={letter} x={0} y={0} points={letterPoints[letter]} />
+            <Tile cellSize={50} letter={tile.letter} x={0} y={0} points={letterPoints[tile.letter]} selected={usedIds.has(tile.id)} />
         </li>
     {/each}
 </ul>
 
-{#if dragIndex !== null && dragMoved}
+{#if dragIndex !== null && dragMoved && tiles[dragIndex]}
     <div class="floating" use:portal style="left: {dragPosition.x - 25}px; top: {dragPosition.y - dragLift}px;">
-        <Tile cellSize={50} letter={unusedLetters[dragIndex]} x={0} y={0} points={letterPoints[unusedLetters[dragIndex]]} selected />
+        <Tile cellSize={50} letter={tiles[dragIndex].letter} x={0} y={0} points={letterPoints[tiles[dragIndex].letter]} selected />
     </div>
 {/if}
