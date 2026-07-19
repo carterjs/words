@@ -382,14 +382,18 @@
         {/if}
 
         {#if !game.playerId}
-            <div>
-                <label>
-                    Name
-                    <input type="text" bind:value={name}>
-                </label>
+            {#if game.started}
+                <p class="hint">You're watching this game - it already started, so you can't join.</p>
+            {:else}
+                <div>
+                    <label>
+                        Name
+                        <input type="text" bind:value={name}>
+                    </label>
 
-                <button class="button" onclick={async () => await game.join(name)}>Join game</button>
-            </div>
+                    <button class="button" onclick={async () => await game.join(name)}>Join game</button>
+                </div>
+            {/if}
         {:else if !game.started}
             <div class="actions">
                 <button class="primary" onclick={(e) => {

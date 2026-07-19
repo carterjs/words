@@ -439,8 +439,8 @@ export  class GameController {
         });
 
         if (!resp.ok) {
-            console.error("failed to join game", await resp.json());
-            throw new Error(`Failed to join game ${this.id}`);
+            this.error = await this.errorMessage(resp, "Couldn't join the game.");
+            return;
         }
 
         let { playerId, players } = await resp.json();

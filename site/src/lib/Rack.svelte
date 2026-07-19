@@ -34,8 +34,13 @@
 
     // index within unusedLetters of the tile being dragged, if any
     let dragIndex = $state<number | null>(null);
-    let dragMoved = false;
+    let dragMoved = $state(false);
     let dragStart = { x: 0, y: 0 };
+
+    // where the dragged tile floats; lifted above the finger on touch so it
+    // isn't hidden under it
+    let dragPosition = $state({ x: 0, y: 0 });
+    let dragLift = $state(0);
 
     // the tile slot closest to the pointer, robust to flex wrapping
     function nearestDisplayIndex(e: PointerEvent) {
@@ -61,6 +66,8 @@
         dragIndex = index;
         dragMoved = false;
         dragStart = { x: e.clientX, y: e.clientY };
+        dragPosition = { x: e.clientX, y: e.clientY };
+        dragLift = e.pointerType === "touch" ? 65 : 25;
         try {
             (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
         } catch {
@@ -70,6 +77,8 @@
 
     function handlePointerMove(e: PointerEvent) {
         if (dragIndex === null) return;
+
+        dragPosition = { x: e.clientX, y: e.clientY };
 
         if (!dragMoved && Math.hypot(e.clientX - dragStart.x, e.clientY - dragStart.y) > 8) {
             dragMoved = true;
@@ -130,7 +139,15 @@
     }
 
     li.dragging {
-        opacity: 0.5;
+        opacity: 0.25;
+    }
+
+    .floating {
+        position: fixed;
+        z-index: 100;
+        pointer-events: none;
+        transform: scale(1.2);
+        filter: drop-shadow(0 6px 10px rgba(0,0,0,0.3));
     }
 </style>
 
@@ -152,3 +169,9 @@
         </li>
     {/each}
 </ul>
+
+{#if dragIndex !== null && dragMoved}
+    <div class="floating" style="left: {dragPosition.x - 25}px; top: {dragPosition.y - dragLift}px;">
+        <Tile cellSize={50} letter={unusedLetters[dragIndex]} x={0} y={0} points={letterPoints[unusedLetters[dragIndex]]} selected />
+    </div>
+{/if}
