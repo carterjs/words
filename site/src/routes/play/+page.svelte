@@ -112,6 +112,27 @@
         && game.challengeableMoverId !== game.playerId
     );
 
+    let boardComponent = $state<ReturnType<typeof Board> | undefined>();
+
+    // cells of the most recently played word, tinted on the board
+    let lastWordCells = $derived.by(() => {
+        const lastWord = game.lastWord;
+        if (!lastWord) return [];
+
+        return [...lastWord.word].map((_, i) => ({
+            x: lastWord.direction === "HORIZONTAL" ? lastWord.x + i : lastWord.x,
+            y: lastWord.direction === "VERTICAL" ? lastWord.y + i : lastWord.y,
+        }));
+    });
+
+    function handleAnnouncementTap() {
+        const at = game.announcement?.at;
+        if (at) {
+            boardComponent?.centerOn(at.x, at.y);
+        }
+        game.announcement = null;
+    }
+
     let canVote = $derived(
         game.challenge !== null
         && !game.myVote
@@ -189,6 +210,17 @@
         margin: 0;
         font-size: 0.85rem;
         color: rgba(0,0,0,0.6);
+    }
+
+    .announcement {
+        font: inherit;
+        font-size: 0.85rem;
+        padding: 0.35rem 0.9rem;
+        border-radius: 999px;
+        border: 1px solid rgba(37,99,235,0.4);
+        background-color: rgba(37,99,235,0.12);
+        color: #1e40af;
+        cursor: pointer;
     }
 
     .actions {
@@ -276,11 +308,13 @@
     <p>Loading game...</p>
 {:else}
     <Board
+            bind:this={boardComponent}
             cells={[...game.board.cells]}
             requestCells={(x1, y1, x2, y2) => game.loadBoard(x1, y1, x2, y2)}
             onCellTap={handleCellTap}
             ghostCells={ghostCells}
             highlightCell={selectedCell}
+            highlightCells={lastWordCells}
             width={boardWidth}
             height={boardHeight}
             offsetX={offsetX}
@@ -304,6 +338,11 @@
                     {game.myTurn ? "Your turn" : `${game.playerName(game.currentPlayerId)}'s turn`}
                     · {game.lettersRemaining} letters left
                 </p>
+            {/if}
+            {#if game.announcement}
+                <button class="announcement" onclick={handleAnnouncementTap}>
+                    {game.announcement.text}{game.announcement.at ? " · tap to view" : ""}
+                </button>
             {/if}
         </header>
     {/if}

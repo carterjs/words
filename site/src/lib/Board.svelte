@@ -10,6 +10,7 @@
         onCellTap?: (x: number, y: number) => void;
         ghostCells?: Cell[];
         highlightCell?: { x: number; y: number } | null;
+        highlightCells?: { x: number; y: number }[];
         width: number;
         height: number;
         scale?: number;
@@ -27,6 +28,7 @@
         onCellTap,
         ghostCells = [],
         highlightCell = null,
+        highlightCells = [],
         width,
         height,
         scale: initialScale = 1,
@@ -76,6 +78,12 @@
 
     function clampScale(value: number) {
         return Math.min(maxScale, Math.max(minScale, value));
+    }
+
+    // centerOn pans the view so the given cell sits at the center of the board
+    export function centerOn(cellX: number, cellY: number) {
+        offsetX = (cellX + 0.5) * cellSize * scale - width / 2;
+        offsetY = (cellY + 0.5) * cellSize * scale - height / 2;
     }
 
     // zoomTo changes the scale while keeping the board point under the given
@@ -305,6 +313,18 @@
                 points={letterPoints[cell.letter]}
             />
         {/if}
+    {/each}
+    {#each highlightCells as cell (cell)}
+        <rect
+                class="highlight"
+                x={cell.x*cellSize}
+                y={cell.y*cellSize}
+                width={cellSize}
+                height={cellSize}
+                fill="rgba(37,99,235,0.18)"
+                stroke="rgba(37,99,235,0.4)"
+                stroke-width="1.5"
+        />
     {/each}
     {#if highlightCell}
         <rect
