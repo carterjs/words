@@ -261,31 +261,41 @@
 
     .actions button {
         font: inherit;
-        padding: 0.5rem 0.9rem;
+        padding: 0 0.9rem;
+        height: 50px;
         border-radius: 0.5rem;
         border: 1px solid rgba(0,0,0,0.25);
         background-color: rgba(255,255,255,0.85);
         cursor: pointer;
     }
 
+    /* the input row matches the 50px rack tiles: same height, same 20px letters */
     .input-row {
         display: flex;
         align-items: stretch;
         gap: 0.5rem;
         margin-top: 0.5rem;
         margin-bottom: 0.5rem;
+        height: 50px;
     }
 
     .input-row .input {
         flex: 1;
         margin: 0;
         min-width: 0;
+        padding: 0 0.75rem;
+        font-size: 1.25rem;
+        letter-spacing: 0.1em;
     }
 
     .tool {
         font: inherit;
-        width: 3rem;
+        font-size: 1.5rem;
+        width: 50px;
         flex-shrink: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
         border-radius: 0.5rem;
         border: 1px solid rgba(0, 0, 0, 0.25);
         background-color: rgba(255, 255, 255, 0.75);
@@ -484,7 +494,7 @@
                 />
                 {#if !game.finished}
                     <div class="input-row">
-                        <button class="tool" title="a letter already on the board" aria-label="board letter" onclick={() => game.input += "*"}>★</button>
+                        <button class="tool" title="a letter already on the board" aria-label="board letter" onclick={() => game.input += "*"}>*</button>
                         <input type="text" bind:value={game.input} placeholder="WORD" class="input" />
                         <button class="tool" disabled={!game.input} aria-label="delete last letter" onclick={() => game.input = game.input.slice(0, -1)}>⌫</button>
                     </div>
