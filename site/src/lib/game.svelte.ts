@@ -63,22 +63,22 @@ export  class GameController {
     }
 
     set rack(value: string[]) {
-        // sort by points
-        value.sort((a, b) => {
-            return this.letterPoints[b] - this.letterPoints[a];
-        });
-
         this.#rack = value;
-        this.sortedRack = value;
-    }
 
-    updateSortedRack() {
-        this.sortedRack = this.sortedRack.sort((a, b) => {
-            // stable sort where letters not in the rack are sorted to the end
-            // adding 1 makes sure all letters in the word are sorted in placement order (including index 0)
-            // || 999 replaces all -1 (now 0) values with 999 so they go to the end
-            return (this.input.indexOf(a)+1 || 999) - (this.input.indexOf(b)+1 || 999);
-        });
+        // preserve the player's arrangement: tiles they still hold keep
+        // their order, new draws join at the end (highest points first)
+        const remaining = [...value];
+        const kept: string[] = [];
+        for (const letter of this.sortedRack) {
+            const index = remaining.indexOf(letter);
+            if (index !== -1) {
+                kept.push(letter);
+                remaining.splice(index, 1);
+            }
+        }
+        remaining.sort((a, b) => (this.letterPoints[b] ?? 0) - (this.letterPoints[a] ?? 0));
+
+        this.sortedRack = [...kept, ...remaining];
     }
 
     sortedRack = $state<string[]>([]);
@@ -91,7 +91,6 @@ export  class GameController {
 
     set input(value: string) {
         this.#input = value;
-        this.updateSortedRack();
     }
 
     started = $state<boolean>(false);

@@ -163,7 +163,14 @@
 </svelte:head>
 
 <style>
+    /* iOS zooms the page on rapid double-taps; declare taps on controls as
+       plain taps so backspacing twice doesn't zoom */
+    button, input {
+        touch-action: manipulation;
+    }
+
     .panel {
+        touch-action: manipulation;
         display: flex;
         flex-direction: column;
         align-items: center;
