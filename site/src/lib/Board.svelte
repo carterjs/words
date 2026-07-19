@@ -39,6 +39,9 @@
 
     let scale = $state(initialScale)
 
+    const minScale = 0.35;
+    const maxScale = 2.5;
+
     let anchor: null | { x: number; y: number } = null;
 
     let displacementX = $state(0);
@@ -53,28 +56,90 @@
 
     // offsetX/offsetY are relative to the event target, which can be a tile
     // or the center star rather than the svg - measure against the svg itself
-    function pointerPosition(e: PointerEvent) {
+    function pointerPosition(e: { clientX: number; clientY: number }) {
         const rect = svgElement.getBoundingClientRect();
         return { x: e.clientX - rect.left, y: e.clientY - rect.top };
     }
 
+    let pointers = new Map<number, { x: number; y: number }>();
+    let pinched = false;
+
+    function pointerDistance() {
+        const [first, second] = [...pointers.values()];
+        return Math.hypot(first.x - second.x, first.y - second.y);
+    }
+
+    function pointerMidpoint() {
+        const [first, second] = [...pointers.values()];
+        return { x: (first.x + second.x) / 2, y: (first.y + second.y) / 2 };
+    }
+
+    function clampScale(value: number) {
+        return Math.min(maxScale, Math.max(minScale, value));
+    }
+
+    // zoomTo changes the scale while keeping the board point under the given
+    // screen position fixed (and optionally following it to a new position)
+    function zoomTo(nextScale: number, from: { x: number; y: number }, to = from) {
+        offsetX = (offsetX + from.x) * (nextScale / scale) - to.x;
+        offsetY = (offsetY + from.y) * (nextScale / scale) - to.y;
+        scale = nextScale;
+    }
+
     function handlePointerDown(e: PointerEvent) {
         if (disabled) return;
-        anchor = pointerPosition(e);
+        const position = pointerPosition(e);
+        pointers.set(e.pointerId, position);
         svgElement.setPointerCapture?.(e.pointerId);
+
+        if (pointers.size === 2) {
+            // second finger down: commit any in-progress pan, start pinching
+            offsetX += displacementX;
+            offsetY += displacementY;
+            displacementX = 0;
+            displacementY = 0;
+            anchor = null;
+            pinched = true;
+        } else if (pointers.size === 1) {
+            anchor = position;
+            pinched = false;
+        } else {
+            anchor = null;
+        }
     }
 
     function handlePointerMove(e: PointerEvent) {
+        if (!pointers.has(e.pointerId)) return;
+
+        if (pointers.size === 2) {
+            const previousMidpoint = pointerMidpoint();
+            const previousDistance = pointerDistance();
+            pointers.set(e.pointerId, pointerPosition(e));
+
+            if (previousDistance > 0) {
+                zoomTo(clampScale(scale * (pointerDistance() / previousDistance)), previousMidpoint, pointerMidpoint());
+            }
+            return;
+        }
+
+        const position = pointerPosition(e);
+        pointers.set(e.pointerId, position);
+
         if (anchor) {
-            const position = pointerPosition(e);
             displacementX = anchor.x - position.x;
             displacementY = anchor.y - position.y;
         }
     }
 
     function handlePointerUp(e?: PointerEvent) {
-        // a pointer that barely moved is a tap on a cell, not a pan
-        const wasTap = e && anchor
+        if (e) {
+            pointers.delete(e.pointerId);
+        } else {
+            pointers.clear();
+        }
+
+        // a pointer that barely moved is a tap on a cell, not a pan or pinch
+        const wasTap = e && anchor && !pinched
             && Math.abs(displacementX) < 8
             && Math.abs(displacementY) < 8;
 
@@ -92,11 +157,24 @@
         }
     }
 
+    // Svelte registers template wheel handlers as passive, so attach directly
+    // to be able to preventDefault the page zoom/scroll
     $effect(() => {
-        let newMinX = Math.min(minX, Math.floor(offsetX / cellSize) - 5);
-        let newMinY = Math.min(minY, Math.floor(offsetY / cellSize) - 5);
-        let newMaxX = Math.max(maxX, Math.ceil((offsetX + width) / cellSize) + 5);
-        let newMaxY = Math.max(maxY, Math.ceil((offsetY + height) / cellSize) + 5);
+        const handleWheel = (e: WheelEvent) => {
+            if (disabled) return;
+            e.preventDefault();
+            zoomTo(clampScale(scale * Math.exp(-e.deltaY * 0.002)), pointerPosition(e));
+        };
+
+        svgElement.addEventListener("wheel", handleWheel, { passive: false });
+        return () => svgElement.removeEventListener("wheel", handleWheel);
+    })
+
+    $effect(() => {
+        let newMinX = Math.min(minX, Math.floor(offsetX / scale / cellSize) - 5);
+        let newMinY = Math.min(minY, Math.floor(offsetY / scale / cellSize) - 5);
+        let newMaxX = Math.max(maxX, Math.ceil((offsetX + width) / scale / cellSize) + 5);
+        let newMaxY = Math.max(maxY, Math.ceil((offsetY + height) / scale / cellSize) + 5);
 
         if (newMinX != minX) {
             requestCells(newMinX, newMinY, minX, newMaxY);
@@ -115,14 +193,21 @@
         }
     })
 
-    let visibleCells = $derived(cells.filter(cell => {
-        if (cell.x * cellSize + cellSize < offsetX + displacementX - 5 * cellSize) return false;
-        if (cell.y * cellSize + cellSize < offsetY + displacementY - 5 * cellSize) return false;
-        if (cell.x * cellSize > offsetX + displacementX + width + 5 * cellSize) return false;
-        if (cell.y * cellSize > offsetY + displacementY + height + 5 * cellSize) return false;
+    let visibleCells = $derived.by(() => {
+        const left = (offsetX + displacementX) / scale;
+        const top = (offsetY + displacementY) / scale;
+        const right = left + width / scale;
+        const bottom = top + height / scale;
 
-        return true;
-    }))
+        return cells.filter(cell => {
+            if (cell.x * cellSize + cellSize < left - 5 * cellSize) return false;
+            if (cell.y * cellSize + cellSize < top - 5 * cellSize) return false;
+            if (cell.x * cellSize > right + 5 * cellSize) return false;
+            if (cell.y * cellSize > bottom + 5 * cellSize) return false;
+
+            return true;
+        });
+    })
 
     const precision = 2;
 
@@ -173,7 +258,7 @@
 
 <svg
         bind:this={svgElement}
-        style="--cell-size: {cellSize*scale}px; --offset-x: {Math.round((-offsetX-displacementX-0.5)%cellSize*precision)/precision}px; --offset-y: {Math.round((-offsetY-displacementY-0.5)%cellSize*precision)/precision}px;{style}"
+        style="--cell-size: {cellSize*scale}px; --offset-x: {Math.round(((-offsetX-displacementX-0.5)%(cellSize*scale))*precision)/precision}px; --offset-y: {Math.round(((-offsetY-displacementY-0.5)%(cellSize*scale))*precision)/precision}px;{style}"
         viewBox={`${Math.round((offsetX+displacementX) / scale * precision) / precision} ${Math.round((offsetY+displacementY) / scale * precision) / precision} ${Math.round(width / scale * precision) / precision} ${Math.round(height / scale*precision)/precision}`}
         width={width}
         height={height}
@@ -183,19 +268,21 @@
         onpointercancel={() => handlePointerUp()}
         onpointerleave={() => handlePointerUp()}
 >
-    <rect
-            x={0}
-            y={0}
-            width={cellSize}
-            height={cellSize}
-            fill="rgba(255,255,255,0.75)"
-            stroke="rgba(0,0,0,0.125)"
-    />
-    <polygon
-            points={starPoints}
-            fill="rgba(0,255,0,0.25)"
-            stroke="rgba(0,0,0,0.25)"
-    />
+    {#if !cells.some(cell => cell.x === 0 && cell.y === 0 && cell.letter)}
+        <rect
+                x={0}
+                y={0}
+                width={cellSize}
+                height={cellSize}
+                fill="rgba(255,255,255,0.75)"
+                stroke="rgba(0,0,0,0.125)"
+        />
+        <polygon
+                points={starPoints}
+                fill="rgba(0,255,0,0.25)"
+                stroke="rgba(0,0,0,0.25)"
+        />
+    {/if}
     {#each visibleCells as cell (cell)}
         {#if cell.modifier}
             <Modifier

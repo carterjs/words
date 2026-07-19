@@ -22,6 +22,12 @@ func (server *Server) handleStreamGameEvents() http.HandlerFunc {
 
 		flusher, canFlush := w.(http.Flusher)
 
+		// flush the headers right away so clients see the stream as open and
+		// can catch up on state missed while (re)connecting
+		if canFlush {
+			flusher.Flush()
+		}
+
 		for {
 			event, err := subscription.Next(r.Context())
 			if err != nil {

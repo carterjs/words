@@ -186,11 +186,26 @@ export  class GameController {
         this.board.cells = this.board.cells.concat(cells || []);
     }
 
+    #events: EventSource | null = null;
+
     streamUpdates() {
+        // the server decides at connection time whether we get our private
+        // events (like rack updates), so reconnect after identity changes
+        this.#events?.close();
+
         // server sent events
         let events = new EventSource(`${PUBLIC_API_URL}/api/v1/games/${this.id}/events`, {
             withCredentials: true
         });
+        this.#events = events;
+
+        // catch up on anything that happened while not connected - a reopen
+        // after joining, a dropped connection, or a server restart
+        events.onopen = async () => {
+            if (!this.loaded) return;
+            await this.refreshMeta();
+            await this.reloadBoard();
+        };
 
         events.addEventListener("GAME_STARTED", (e) => {
             this.started = true;
@@ -293,6 +308,7 @@ export  class GameController {
         }
 
         const data = await resp.json();
+        this.started = data.started;
         this.players = data.players || [];
         this.currentPlayerId = data.currentPlayerId;
         this.lettersRemaining = data.lettersRemaining;
@@ -300,6 +316,11 @@ export  class GameController {
         this.winnerIds = data.winnerIds || [];
         this.challenge = data.challenge || null;
         this.challengeableMoverId = data.challengeableMoverId || null;
+
+        // safety net in case a private rack event was missed
+        if (data.rack && [...data.rack].sort().join() !== [...this.rack].sort().join()) {
+            this.rack = data.rack;
+        }
     }
 
     mergeWord(placement: Placement) {
@@ -345,6 +366,10 @@ export  class GameController {
 
         this.playerId = playerId;
         this.players = players || [];
+
+        // the event stream was opened before we had an identity; reconnect so
+        // the server includes our private events
+        this.streamUpdates();
     }
 
     async start() {

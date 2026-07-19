@@ -366,10 +366,12 @@
         {:else}
             <div style="width: 100%; max-width: 24rem;">
                 <Rack letters={game.sortedRack} letterPoints={game.letterPoints} input={game.input} />
-                {#if game.myTurn}
+                {#if !game.finished}
                     <input type="text" bind:value={game.input} placeholder="WORD" class="input" />
                     <p class="hint">
-                        {#if game.board.cells.some(cell => cell.letter)}
+                        {#if !game.myTurn}
+                            Plan your next word while you wait.
+                        {:else if game.board.cells.some(cell => cell.letter)}
                             Type a word, then tap the square where it starts.
                         {:else}
                             Type a word, then tap the center star to place it.
@@ -379,14 +381,14 @@
             </div>
             <div class="actions">
                 {#if game.myTurn}
-                    <button onclick={() => game.pass()}>Pass</button>
+                    <button onclick={() => game.pass()}>Skip my turn</button>
                     <button
                             disabled={game.input.length === 0}
                             onclick={() => game.exchange([...game.input])}
-                    >Exchange{game.input.length > 0 ? ` ${game.input.length}` : ""}</button>
+                    >{game.input.length > 0 ? `Swap ${game.input.length} letters` : "Swap letters"}</button>
                 {/if}
-                {#if canChallenge}
-                    <button onclick={() => game.challengeWord()}>Challenge last word</button>
+                {#if canChallenge && game.challengeableMoverId}
+                    <button onclick={() => game.challengeWord()}>Challenge {game.playerName(game.challengeableMoverId)}'s word</button>
                 {/if}
             </div>
         {/if}
