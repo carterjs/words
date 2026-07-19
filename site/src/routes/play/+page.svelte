@@ -112,6 +112,35 @@
         && game.challengeableMoverId !== game.playerId
     );
 
+    let boardComponent = $state<ReturnType<typeof Board> | undefined>();
+
+    let boardView = $state<{ minX: number; minY: number; maxX: number; maxY: number } | null>(null);
+
+    // offer a way home when the center star has drifted off-screen
+    let showRecenter = $derived(
+        boardView !== null
+        && (boardView.maxX < 0 || boardView.minX > 1 || boardView.maxY < 0 || boardView.minY > 1)
+    );
+
+    // cells of the most recently played word, tinted on the board
+    let lastWordCells = $derived.by(() => {
+        const lastWord = game.lastWord;
+        if (!lastWord) return [];
+
+        return [...lastWord.word].map((_, i) => ({
+            x: lastWord.direction === "HORIZONTAL" ? lastWord.x + i : lastWord.x,
+            y: lastWord.direction === "VERTICAL" ? lastWord.y + i : lastWord.y,
+        }));
+    });
+
+    function handleAnnouncementTap() {
+        const at = game.announcement?.at;
+        if (at) {
+            boardComponent?.centerOn(at.x, at.y);
+        }
+        game.announcement = null;
+    }
+
     let canVote = $derived(
         game.challenge !== null
         && !game.myVote
@@ -189,6 +218,31 @@
         margin: 0;
         font-size: 0.85rem;
         color: rgba(0,0,0,0.6);
+    }
+
+    .announcement {
+        font: inherit;
+        font-size: 0.85rem;
+        padding: 0.35rem 0.9rem;
+        border-radius: 999px;
+        border: 1px solid rgba(37,99,235,0.4);
+        background-color: rgba(37,99,235,0.12);
+        color: #1e40af;
+        cursor: pointer;
+    }
+
+    .recenter {
+        position: fixed;
+        right: 1rem;
+        bottom: 40%;
+        font: inherit;
+        font-size: 0.85rem;
+        padding: 0.5rem 1rem;
+        border-radius: 999px;
+        border: 1px solid rgba(0,0,0,0.2);
+        background-color: rgba(255,255,255,0.9);
+        box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        cursor: pointer;
     }
 
     .actions {
@@ -276,11 +330,14 @@
     <p>Loading game...</p>
 {:else}
     <Board
+            bind:this={boardComponent}
             cells={[...game.board.cells]}
             requestCells={(x1, y1, x2, y2) => game.loadBoard(x1, y1, x2, y2)}
             onCellTap={handleCellTap}
+            onViewChange={(view) => boardView = view}
             ghostCells={ghostCells}
             highlightCell={selectedCell}
+            highlightCells={lastWordCells}
             width={boardWidth}
             height={boardHeight}
             offsetX={offsetX}
@@ -289,6 +346,12 @@
             style="position: fixed; top: 0; left: 0; width: 100%; height: 100%;"
             cellSize={50}
     />
+
+    {#if showRecenter}
+        <button class="recenter" onclick={() => boardComponent?.centerOn(0, 0)}>
+            Back to center
+        </button>
+    {/if}
 
     {#if game.started}
         <header class="panel">
@@ -304,6 +367,11 @@
                     {game.myTurn ? "Your turn" : `${game.playerName(game.currentPlayerId)}'s turn`}
                     · {game.lettersRemaining} letters left
                 </p>
+            {/if}
+            {#if game.announcement}
+                <button class="announcement" onclick={handleAnnouncementTap}>
+                    {game.announcement.text}{game.announcement.at ? " · tap to view" : ""}
+                </button>
             {/if}
         </header>
     {/if}
@@ -365,11 +433,19 @@
             </div>
         {:else}
             <div style="width: 100%; max-width: 24rem;">
-                <Rack letters={game.sortedRack} letterPoints={game.letterPoints} input={game.input} />
-                {#if game.myTurn}
+                <Rack
+                        letters={game.sortedRack}
+                        letterPoints={game.letterPoints}
+                        input={game.input}
+                        onTapLetter={(letter, used) => game.tapLetter(letter, used)}
+                        onReorder={(letters) => game.setRackOrder(letters)}
+                />
+                {#if !game.finished}
                     <input type="text" bind:value={game.input} placeholder="WORD" class="input" />
                     <p class="hint">
-                        {#if game.board.cells.some(cell => cell.letter)}
+                        {#if !game.myTurn}
+                            Plan your next word while you wait.
+                        {:else if game.board.cells.some(cell => cell.letter)}
                             Type a word, then tap the square where it starts.
                         {:else}
                             Type a word, then tap the center star to place it.
@@ -379,14 +455,14 @@
             </div>
             <div class="actions">
                 {#if game.myTurn}
-                    <button onclick={() => game.pass()}>Pass</button>
+                    <button onclick={() => game.pass()}>Skip my turn</button>
                     <button
                             disabled={game.input.length === 0}
                             onclick={() => game.exchange([...game.input])}
-                    >Exchange{game.input.length > 0 ? ` ${game.input.length}` : ""}</button>
+                    >{game.input.length > 0 ? `Swap ${game.input.length} letters` : "Swap letters"}</button>
                 {/if}
-                {#if canChallenge}
-                    <button onclick={() => game.challengeWord()}>Challenge last word</button>
+                {#if canChallenge && game.challengeableMoverId}
+                    <button onclick={() => game.challengeWord()}>Challenge {game.playerName(game.challengeableMoverId)}'s word</button>
                 {/if}
             </div>
         {/if}

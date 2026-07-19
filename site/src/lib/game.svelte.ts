@@ -35,6 +35,20 @@ export type Challenge = {
     eligibleVoters: number;
 }
 
+export type LastWord = {
+    playerId: string;
+    x: number;
+    y: number;
+    direction: "HORIZONTAL" | "VERTICAL";
+    word: string;
+}
+
+export type Announcement = {
+    text: string;
+    // board cell to jump to when the announcement is tapped
+    at?: { x: number; y: number };
+}
+
 export  class GameController {
     id = $state<string>("");
 
@@ -96,6 +110,21 @@ export  class GameController {
 
     // the id of the player who played the still-challengeable last word
     challengeableMoverId = $state<string | null>(null);
+
+    // the most recently played word, highlighted on the board until the next move
+    lastWord = $state<LastWord | null>(null);
+
+    announcement = $state<Announcement | null>(null);
+
+    #announcementTimer: ReturnType<typeof setTimeout> | undefined;
+
+    announce(text: string, at?: { x: number; y: number }) {
+        this.announcement = { text, at };
+        clearTimeout(this.#announcementTimer);
+        this.#announcementTimer = setTimeout(() => {
+            this.announcement = null;
+        }, 8000);
+    }
 
     myVote = $state<boolean>(false);
 
@@ -183,14 +212,33 @@ export  class GameController {
 
         let { cells } = await resp.json();
 
-        this.board.cells = this.board.cells.concat(cells || []);
+        // lazy-loaded ranges can overlap what's already loaded
+        const known = new Set(this.board.cells.map((cell: Cell) => `${cell.x},${cell.y}`));
+        const fresh = (cells || []).filter((cell: Cell) => !known.has(`${cell.x},${cell.y}`));
+
+        this.board.cells = this.board.cells.concat(fresh);
     }
 
+    #events: EventSource | null = null;
+
     streamUpdates() {
+        // the server decides at connection time whether we get our private
+        // events (like rack updates), so reconnect after identity changes
+        this.#events?.close();
+
         // server sent events
         let events = new EventSource(`${PUBLIC_API_URL}/api/v1/games/${this.id}/events`, {
             withCredentials: true
         });
+        this.#events = events;
+
+        // catch up on anything that happened while not connected - a reopen
+        // after joining, a dropped connection, or a server restart
+        events.onopen = async () => {
+            if (!this.loaded) return;
+            await this.refreshMeta();
+            await this.reloadBoard();
+        };
 
         events.addEventListener("GAME_STARTED", (e) => {
             this.started = true;
@@ -219,6 +267,25 @@ export  class GameController {
             this.challengeableMoverId = played.playerId;
             this.myVote = false;
 
+            this.lastWord = {
+                playerId: played.playerId,
+                x: played.x,
+                y: played.y,
+                direction: played.direction,
+                word: played.word,
+            };
+
+            if (played.playerId !== this.playerId) {
+                const middle = Math.floor(played.word.length / 2);
+                this.announce(
+                    `${this.playerName(played.playerId)} played ${played.word} for ${played.points} point${played.points === 1 ? "" : "s"}`,
+                    {
+                        x: played.direction === "HORIZONTAL" ? played.x + middle : played.x,
+                        y: played.direction === "VERTICAL" ? played.y + middle : played.y,
+                    },
+                );
+            }
+
             const player = this.getPlayerById(played.playerId);
             if (player) {
                 player.score += played.points;
@@ -233,16 +300,24 @@ export  class GameController {
         })
 
         events.addEventListener("TURN_PASSED", (e) => {
-            const { nextPlayerId } = JSON.parse(e.data);
+            const { playerId, nextPlayerId } = JSON.parse(e.data);
             this.currentPlayerId = nextPlayerId;
             this.challengeableMoverId = null;
+            this.lastWord = null;
+            if (playerId !== this.playerId) {
+                this.announce(`${this.playerName(playerId)} skipped their turn`);
+            }
             this.refreshMeta();
         })
 
         events.addEventListener("LETTERS_EXCHANGED", (e) => {
-            const { nextPlayerId } = JSON.parse(e.data);
+            const { playerId, count, nextPlayerId } = JSON.parse(e.data);
             this.currentPlayerId = nextPlayerId;
             this.challengeableMoverId = null;
+            this.lastWord = null;
+            if (playerId !== this.playerId) {
+                this.announce(`${this.playerName(playerId)} swapped ${count} letter${count === 1 ? "" : "s"}`);
+            }
             this.refreshMeta();
         })
 
@@ -258,14 +333,18 @@ export  class GameController {
         })
 
         events.addEventListener("CHALLENGE_RESOLVED", async (e) => {
-            const { upheld } = JSON.parse(e.data);
+            const { upheld, rescindedWord } = JSON.parse(e.data);
             this.challenge = null;
             this.challengeableMoverId = null;
+            this.lastWord = null;
             this.myVote = false;
 
             if (upheld) {
+                this.announce(`${rescindedWord ? `"${rescindedWord}"` : "The word"} was voted invalid and removed`);
                 // the word came off the board; scores changed too
                 await this.reloadBoard();
+            } else {
+                this.announce("The challenge failed - the word stands");
             }
             await this.refreshMeta();
         })
@@ -293,6 +372,7 @@ export  class GameController {
         }
 
         const data = await resp.json();
+        this.started = data.started;
         this.players = data.players || [];
         this.currentPlayerId = data.currentPlayerId;
         this.lettersRemaining = data.lettersRemaining;
@@ -300,6 +380,11 @@ export  class GameController {
         this.winnerIds = data.winnerIds || [];
         this.challenge = data.challenge || null;
         this.challengeableMoverId = data.challengeableMoverId || null;
+
+        // safety net in case a private rack event was missed
+        if (data.rack && [...data.rack].sort().join() !== [...this.rack].sort().join()) {
+            this.rack = data.rack;
+        }
     }
 
     mergeWord(placement: Placement) {
@@ -319,6 +404,23 @@ export  class GameController {
         }
 
         this.board = { cells };
+    }
+
+    // tapLetter adds an unused rack letter to the word being built, or
+    // removes a used one from it
+    tapLetter(letter: string, used: boolean) {
+        if (used) {
+            const index = this.input.lastIndexOf(letter);
+            if (index !== -1) {
+                this.input = this.input.slice(0, index) + this.input.slice(index + 1);
+            }
+        } else {
+            this.input += letter;
+        }
+    }
+
+    setRackOrder(letters: string[]) {
+        this.sortedRack = letters;
     }
 
     async join(name: string) {
@@ -345,6 +447,10 @@ export  class GameController {
 
         this.playerId = playerId;
         this.players = players || [];
+
+        // the event stream was opened before we had an identity; reconnect so
+        // the server includes our private events
+        this.streamUpdates();
     }
 
     async start() {

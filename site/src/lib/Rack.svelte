@@ -3,12 +3,13 @@
 
     type Props = {
         letters: string[];
-        setLetters?: (letters: string[]) => void;
         letterPoints?: Record<string, number>;
         input?: string;
+        onTapLetter?: (letter: string, used: boolean) => void;
+        onReorder?: (letters: string[]) => void;
     }
 
-    const { letters, letterPoints={}, input="" }: Props = $props();
+    const { letters, letterPoints={}, input="", onTapLetter, onReorder }: Props = $props();
 
     let unusedLetters = $state<string[]>([]);
     let usedLetters = $state<string[]>([]);
@@ -28,6 +29,84 @@
         unusedLetters = nextUnusedLetters;
         usedLetters = nextUsedLetters;
     })
+
+    let listElement: HTMLUListElement;
+
+    // index within unusedLetters of the tile being dragged, if any
+    let dragIndex = $state<number | null>(null);
+    let dragMoved = false;
+    let dragStart = { x: 0, y: 0 };
+
+    // the tile slot closest to the pointer, robust to flex wrapping
+    function nearestDisplayIndex(e: PointerEvent) {
+        let best = 0;
+        let bestDistance = Infinity;
+
+        [...listElement.children].forEach((child, index) => {
+            const rect = child.getBoundingClientRect();
+            const distance = Math.hypot(
+                e.clientX - (rect.left + rect.width / 2),
+                e.clientY - (rect.top + rect.height / 2),
+            );
+            if (distance < bestDistance) {
+                bestDistance = distance;
+                best = index;
+            }
+        });
+
+        return best;
+    }
+
+    function handlePointerDown(e: PointerEvent, index: number) {
+        dragIndex = index;
+        dragMoved = false;
+        dragStart = { x: e.clientX, y: e.clientY };
+        try {
+            (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+        } catch {
+            // synthetic events have no active pointer to capture
+        }
+    }
+
+    function handlePointerMove(e: PointerEvent) {
+        if (dragIndex === null) return;
+
+        if (!dragMoved && Math.hypot(e.clientX - dragStart.x, e.clientY - dragStart.y) > 8) {
+            dragMoved = true;
+        }
+        if (!dragMoved) return;
+
+        const target = Math.max(0, Math.min(
+            unusedLetters.length - 1,
+            nearestDisplayIndex(e) - usedLetters.length,
+        ));
+
+        if (target !== dragIndex) {
+            const next = [...unusedLetters];
+            const [moved] = next.splice(dragIndex, 1);
+            next.splice(target, 0, moved);
+            unusedLetters = next;
+            dragIndex = target;
+        }
+    }
+
+    function handlePointerUp() {
+        if (dragIndex === null) return;
+
+        if (dragMoved) {
+            onReorder?.([...usedLetters, ...unusedLetters]);
+        } else {
+            onTapLetter?.(unusedLetters[dragIndex], false);
+        }
+
+        dragIndex = null;
+        dragMoved = false;
+    }
+
+    function handlePointerCancel() {
+        dragIndex = null;
+        dragMoved = false;
+    }
 </script>
 
 <style>
@@ -44,18 +123,31 @@
         display: block;
         padding: 0;
         margin: 0;
+        touch-action: none;
+        user-select: none;
+        -webkit-user-select: none;
+        cursor: pointer;
     }
 
+    li.dragging {
+        opacity: 0.5;
+    }
 </style>
 
-<ul>
-    {#each usedLetters as letter}
-        <li>
+<ul bind:this={listElement}>
+    {#each usedLetters as letter, index (index)}
+        <li onpointerup={() => onTapLetter?.(letter, true)}>
             <Tile cellSize={50} letter={letter} x={0} y={0} points={letterPoints[letter]} selected />
         </li>
     {/each}
-    {#each unusedLetters as letter}
-        <li>
+    {#each unusedLetters as letter, index (index)}
+        <li
+                class:dragging={dragIndex === index}
+                onpointerdown={(e) => handlePointerDown(e, index)}
+                onpointermove={handlePointerMove}
+                onpointerup={handlePointerUp}
+                onpointercancel={handlePointerCancel}
+        >
             <Tile cellSize={50} letter={letter} x={0} y={0} points={letterPoints[letter]} />
         </li>
     {/each}

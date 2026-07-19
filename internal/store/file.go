@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+	"time"
 
 	"github.com/carterjs/words/internal/words"
 )
@@ -88,6 +90,48 @@ func (fileStore *FS) GameByID(ctx context.Context, gameID string) (*words.Game, 
 	return game, nil
 }
 
+// gameFileSuffix is the extension of stored game snapshots.
+const gameFileSuffix = ".json.gz"
+
+// RemoveIdleGames deletes unfinished games that have not been saved for at
+// least maxIdle, returning how many were removed. Finished games are kept so
+// they can be displayed later. A game's last save time is its file's
+// modification time.
+func (fileStore *FS) RemoveIdleGames(ctx context.Context, maxIdle time.Duration) (int, error) {
+	entries, err := os.ReadDir(fileStore.directory)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return 0, nil
+		}
+
+		return 0, fmt.Errorf("reading games directory: %w", err)
+	}
+
+	var removed int
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), gameFileSuffix) {
+			continue
+		}
+
+		info, err := entry.Info()
+		if err != nil || time.Since(info.ModTime()) < maxIdle {
+			continue
+		}
+
+		game, err := fileStore.GameByID(ctx, strings.TrimSuffix(entry.Name(), gameFileSuffix))
+		if err != nil || game.Finished() {
+			continue
+		}
+
+		if err := os.Remove(filepath.Join(fileStore.directory, entry.Name())); err != nil {
+			return removed, fmt.Errorf("removing idle game: %w", err)
+		}
+		removed++
+	}
+
+	return removed, nil
+}
+
 func (fileStore *FS) gameFile(gameID string) string {
-	return filepath.Join(fileStore.directory, gameID+".json.gz")
+	return filepath.Join(fileStore.directory, gameID+gameFileSuffix)
 }

@@ -1,7 +1,10 @@
 package store_test
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/carterjs/words/internal/store"
 	"github.com/carterjs/words/internal/words"
@@ -41,6 +44,58 @@ func TestFS_GameByID(t *testing.T) {
 
 			require.NoError(t, err)
 			assert.Equal(t, game.State(), loaded.State())
+		})
+	}
+}
+
+func TestFS_RemoveIdleGames(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		finished    bool
+		old         bool
+		wantRemoved int
+	}{
+		{name: "removes an idle unfinished game", old: true, wantRemoved: 1},
+		{name: "keeps an idle finished game", old: true, finished: true},
+		{name: "keeps a recently saved game"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			directory := t.TempDir()
+			fileStore := store.NewFS(directory)
+
+			game := newSavableGame(t)
+			if test.finished {
+				state := game.State()
+				state.Finished = true
+
+				var err error
+				game, err = words.NewGameFromState(state)
+				require.NoError(t, err)
+			}
+			require.NoError(t, fileStore.SaveGame(t.Context(), game))
+
+			if test.old {
+				stale := time.Now().Add(-48 * time.Hour)
+				require.NoError(t, os.Chtimes(filepath.Join(directory, game.ID()+".json.gz"), stale, stale))
+			}
+
+			removed, err := fileStore.RemoveIdleGames(t.Context(), 24*time.Hour)
+
+			require.NoError(t, err)
+			assert.Equal(t, test.wantRemoved, removed)
+
+			_, err = fileStore.GameByID(t.Context(), game.ID())
+			if test.wantRemoved > 0 {
+				assert.ErrorIs(t, err, words.ErrGameNotFound)
+			} else {
+				assert.NoError(t, err)
+			}
 		})
 	}
 }

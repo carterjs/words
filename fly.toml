@@ -4,9 +4,18 @@
 #
 
 app = 'words-game'
-primary_region = 'den'
+# the words_data volume lives in dfw; machines must be in the volume's region
+primary_region = 'dfw'
 
 [build]
+
+[env]
+  DATA_DIR = '/data'
+
+# requires the one-time `fly volumes create words_data --region dfw --size 1`
+[mounts]
+  source = 'words_data'
+  destination = '/data'
 
 [http_service]
   internal_port = 8080
