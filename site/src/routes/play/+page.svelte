@@ -114,6 +114,14 @@
 
     let boardComponent = $state<ReturnType<typeof Board> | undefined>();
 
+    let boardView = $state<{ minX: number; minY: number; maxX: number; maxY: number } | null>(null);
+
+    // offer a way home when the center star has drifted off-screen
+    let showRecenter = $derived(
+        boardView !== null
+        && (boardView.maxX < 0 || boardView.minX > 1 || boardView.maxY < 0 || boardView.minY > 1)
+    );
+
     // cells of the most recently played word, tinted on the board
     let lastWordCells = $derived.by(() => {
         const lastWord = game.lastWord;
@@ -223,6 +231,20 @@
         cursor: pointer;
     }
 
+    .recenter {
+        position: fixed;
+        right: 1rem;
+        bottom: 40%;
+        font: inherit;
+        font-size: 0.85rem;
+        padding: 0.5rem 1rem;
+        border-radius: 999px;
+        border: 1px solid rgba(0,0,0,0.2);
+        background-color: rgba(255,255,255,0.9);
+        box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        cursor: pointer;
+    }
+
     .actions {
         display: flex;
         flex-wrap: wrap;
@@ -312,6 +334,7 @@
             cells={[...game.board.cells]}
             requestCells={(x1, y1, x2, y2) => game.loadBoard(x1, y1, x2, y2)}
             onCellTap={handleCellTap}
+            onViewChange={(view) => boardView = view}
             ghostCells={ghostCells}
             highlightCell={selectedCell}
             highlightCells={lastWordCells}
@@ -323,6 +346,12 @@
             style="position: fixed; top: 0; left: 0; width: 100%; height: 100%;"
             cellSize={50}
     />
+
+    {#if showRecenter}
+        <button class="recenter" onclick={() => boardComponent?.centerOn(0, 0)}>
+            Back to center
+        </button>
+    {/if}
 
     {#if game.started}
         <header class="panel">

@@ -8,6 +8,7 @@
         cells: Cell[];
         requestCells?: (x1: number, y1: number, x2: number, y2: number) => void;
         onCellTap?: (x: number, y: number) => void;
+        onViewChange?: (view: { minX: number; minY: number; maxX: number; maxY: number }) => void;
         ghostCells?: Cell[];
         highlightCell?: { x: number; y: number } | null;
         highlightCells?: { x: number; y: number }[];
@@ -26,6 +27,7 @@
         cells = [],
         requestCells = (x1, y1, x2, y2) => console.log(x1, y1, x2, y2),
         onCellTap,
+        onViewChange,
         ghostCells = [],
         highlightCell = null,
         highlightCells = [],
@@ -85,6 +87,17 @@
         offsetX = (cellX + 0.5) * cellSize * scale - width / 2;
         offsetY = (cellY + 0.5) * cellSize * scale - height / 2;
     }
+
+    // report the visible cell range so the page can tell when the player
+    // has wandered away from the action
+    $effect(() => {
+        onViewChange?.({
+            minX: (offsetX + displacementX) / scale / cellSize,
+            minY: (offsetY + displacementY) / scale / cellSize,
+            maxX: (offsetX + displacementX + width) / scale / cellSize,
+            maxY: (offsetY + displacementY + height) / scale / cellSize,
+        });
+    })
 
     // zoomTo changes the scale while keeping the board point under the given
     // screen position fixed (and optionally following it to a new position)
