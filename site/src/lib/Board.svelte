@@ -308,7 +308,7 @@
                 stroke="rgba(0,0,0,0.25)"
         />
     {/if}
-    {#each visibleCells as cell (cell)}
+    {#each visibleCells as cell (`${cell.x},${cell.y}`)}
         {#if cell.modifier}
             <Modifier
                 cellSize={cellSize}

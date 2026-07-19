@@ -1,10 +1,17 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
+	"time"
 )
+
+// keepaliveInterval is how often a comment is written to an otherwise quiet
+// event stream so proxies don't drop the connection as idle.
+const keepaliveInterval = 25 * time.Second
 
 // handleStreamGameEvents streams a game's events over server-sent events.
 // Players identified by their cookie also receive their private events.
@@ -29,9 +36,21 @@ func (server *Server) handleStreamGameEvents() http.HandlerFunc {
 		}
 
 		for {
-			event, err := subscription.Next(r.Context())
+			waitCtx, cancel := context.WithTimeout(r.Context(), keepaliveInterval)
+			event, err := subscription.Next(waitCtx)
+			cancel()
+
 			if err != nil {
-				return
+				if r.Context().Err() != nil || !errors.Is(err, context.DeadlineExceeded) {
+					return
+				}
+
+				// quiet stretch: write a comment so the connection stays alive
+				fmt.Fprint(w, ": keepalive\n\n")
+				if canFlush {
+					flusher.Flush()
+				}
+				continue
 			}
 
 			payload := event.Payload

@@ -212,7 +212,11 @@ export  class GameController {
 
         let { cells } = await resp.json();
 
-        this.board.cells = this.board.cells.concat(cells || []);
+        // lazy-loaded ranges can overlap what's already loaded
+        const known = new Set(this.board.cells.map((cell: Cell) => `${cell.x},${cell.y}`));
+        const fresh = (cells || []).filter((cell: Cell) => !known.has(`${cell.x},${cell.y}`));
+
+        this.board.cells = this.board.cells.concat(fresh);
     }
 
     #events: EventSource | null = null;
