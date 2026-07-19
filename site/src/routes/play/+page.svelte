@@ -41,7 +41,8 @@
     let name = $state("");
 
     $effect(() => {
-        game.input = game.input.toUpperCase().replace(/[^A-Z]/g, "");
+        // * is a placeholder for a letter already on the board
+        game.input = game.input.toUpperCase().replace(/[^A-Z*]/g, "");
     })
 
     let selectedCell = $state<{ x: number; y: number } | null>(null);
@@ -229,6 +230,10 @@
         background-color: rgba(37,99,235,0.12);
         color: #1e40af;
         cursor: pointer;
+    }
+
+    .input-tools {
+        margin-top: 0.5rem;
     }
 
     .recenter {
@@ -446,11 +451,15 @@
                 />
                 {#if !game.finished}
                     <input type="text" bind:value={game.input} placeholder="WORD" class="input" />
+                    <div class="actions input-tools">
+                        <button onclick={() => game.input += "*"} title="a letter already on the board">＋ board letter</button>
+                        <button disabled={!game.input} onclick={() => game.input = game.input.slice(0, -1)}>⌫ delete</button>
+                    </div>
                     <p class="hint">
                         {#if !game.myTurn}
                             Plan your next word while you wait.
                         {:else if game.board.cells.some(cell => cell.letter)}
-                            Type a word, then tap the square where it starts.
+                            Tap where the word starts. "＋ board letter" adds a * for a letter you're crossing.
                         {:else}
                             Type a word, then tap the center star to place it.
                         {/if}
