@@ -116,6 +116,18 @@
         dragIndex = null;
         dragMoved = false;
     }
+
+    // ancestors with backdrop-filter (the footer panel) become the containing
+    // block for position:fixed, throwing off viewport coordinates - render
+    // the floating tile from the body instead
+    function portal(node: HTMLElement) {
+        document.body.appendChild(node);
+        return {
+            destroy() {
+                node.remove();
+            },
+        };
+    }
 </script>
 
 <style>
@@ -171,7 +183,7 @@
 </ul>
 
 {#if dragIndex !== null && dragMoved}
-    <div class="floating" style="left: {dragPosition.x - 25}px; top: {dragPosition.y - dragLift}px;">
+    <div class="floating" use:portal style="left: {dragPosition.x - 25}px; top: {dragPosition.y - dragLift}px;">
         <Tile cellSize={50} letter={unusedLetters[dragIndex]} x={0} y={0} points={letterPoints[unusedLetters[dragIndex]]} selected />
     </div>
 {/if}
